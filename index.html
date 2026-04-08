@@ -1219,7 +1219,7 @@ const _streakQuat=new THREE.Quaternion(),_zAxis=new THREE.Vector3(0,0,1);
 // ======================================================
 // ⚡ LED光跡システム — AKIRAバイク/SWワープ航法の極太線状光跡
 // ======================================================
-const LED_TRAIL_COUNT = 12;          // 使用するLED数（0,2,4...22番）
+const LED_TRAIL_COUNT = 6;          // 使用するLED数（0,2,4...22番）
 const LED_TRAIL_POOL_SIZE = LED_TRAIL_COUNT * 22;
 const _ledTrailPool = [];
 const _ledTrailActive = [];
@@ -1306,7 +1306,7 @@ function animate(){
     // ======================================================
     if(boostFactor>0.05&&isMoving){
         for(let li=0;li<LED_TRAIL_COUNT;li++){
-            const ledIdx=li*2; // 0,2,4,6...22番LEDを使用
+            const ledIdx=li*4; // 0,2,4,6...22番LEDを使用
             const led=ledRing.children[ledIdx];
             led.getWorldPosition(_ledWorldPos);
 
