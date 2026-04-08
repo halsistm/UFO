@@ -1320,8 +1320,9 @@ function animate(){
             const hue=((ledIdx/24)+time*0.4)%1;
 
             // AKIRAワープ光跡：移動方向後方へ伸びる極太線状ストリーク
-            const streakLen=4+boostFactor*80;
-            const thickness=1.0+boostFactor*4.5;
+            const streakLen=6+boostFactor*90;
+            const thickness=2.0+boostFactor*6.5;
+            const tapeHeight = 0.22;
             const initOpacity=Math.min(boostFactor*1.8,0.90);
 
             // LEDの世界座標から、移動方向の逆側に中心をずらす
@@ -1338,7 +1339,8 @@ function animate(){
             p.visible=true;
 
             const maxAge=0.04+boostFactor*0.15;
-            _ledTrailActive.push({m:p,age:0,maxAge,initOpacity,streakLen,thickness});
+            // 変更後
+_ledTrailActive.push({m:p, age:0, maxAge, initOpacity, streakLen, thickness: tapeWidth});
         }
     }
 
@@ -1355,7 +1357,9 @@ function animate(){
         const prog=t.age/t.maxAge;
         const lenNow=t.streakLen*(1-prog*0.5);
         const thinNow=t.thickness*(1-prog*0.65);
-        t.m.scale.set(thinNow,thinNow,lenNow);
+        // 変更後
+        const tapeW = t.thickness * (1 - prog * 0.3);
+        t.m.scale.set(tapeW, 0.22, lenNow);
         t.m.material.opacity=t.initOpacity*(1-prog*prog);
     }
 
