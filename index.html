@@ -78,14 +78,6 @@
             transition: all 0.1s; user-select: none; pointer-events: auto;
         }
         #attack-btn:active { background: radial-gradient(circle, rgba(255,60,0,0.5) 0%, rgba(255,60,0,0.15) 100%); }
-        #encyclopedia-btn {
-            position: absolute; top: 20px; right: 20px;
-            padding: 10px 20px; background: rgba(0,0,0,0.7);
-            color: #00ff88; border: 1px solid #00ff8866;
-            border-radius: 6px; cursor: pointer; pointer-events: auto;
-            font-family: 'Courier New', monospace; font-size: 13px; letter-spacing: 1px;
-            text-shadow: 0 0 8px #00ff88;
-        }
         #modal {
             display: none; position: fixed; top: 0; left: 0;
             width: 100%; height: 100%; background: rgba(0,0,0,0.92);
@@ -155,7 +147,6 @@
         UFO HP
         <div id="hp-bar-bg"><div id="hp-fill" style="width:100%"></div></div>
     </div>
-    <button id="encyclopedia-btn">[ 図鑑 ]</button>
     <div id="controls">
         <div class="btn" id="abduct-btn">ABDUCT</div>
         <div id="attack-btn">ATTACK</div>
@@ -166,14 +157,6 @@
     </div>
     <div id="notification">+100</div>
     <div id="apache-warning">⚠ APACHE INCOMING ⚠</div>
-</div>
-
-<div id="modal">
-    <div id="modal-header">
-        <div id="modal-title">// ABDUCTION LOG //</div>
-        <button id="close-btn">[ 閉じる ]</button>
-    </div>
-    <div class="grid" id="card-grid"></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -454,7 +437,9 @@ function buildChunk(cx, cz) {
                 wz: cz*CHUNK_SIZE + child.position.z,
                 w: child.userData.bw,
                 d: child.userData.bd,
-                h: child.userData.bh
+                h: child.userData.bh,
+                mesh: child,
+                parentGroup: group
             });
         }
     });
@@ -881,6 +866,46 @@ function fireAttackBeam() {
     } else {
         // Fire toward ground ahead of UFO
         targetPos = new THREE.Vector3(ufo.position.x, 0, ufo.position.z - 60);
+
+        // 着弾点付近の建物を爆破
+        const BEAM_DESTROY_RADIUS = 22;
+        let buildingHit = false;
+        for(const [chunkKey, colliders] of buildingColliders) {
+            for(let bi = colliders.length-1; bi >= 0; bi--) {
+                const c = colliders[bi];
+                const bdx = c.wx - targetPos.x;
+                const bdz = c.wz - targetPos.z;
+                if(Math.sqrt(bdx*bdx + bdz*bdz) < BEAM_DESTROY_RADIUS) {
+                    buildingHit = true;
+                    // 複数の爆発エフェクト（建物の高さに沿って）
+                    const explosionCount = 3 + Math.floor(Math.random()*3);
+                    for(let ei=0; ei<explosionCount; ei++) {
+                        setTimeout(() => {
+                            createExplosion(new THREE.Vector3(
+                                c.wx + (Math.random()-0.5)*c.w,
+                                c.h * (ei / explosionCount) * 0.9 + 1,
+                                c.wz + (Math.random()-0.5)*c.d
+                            ));
+                        }, ei * 120);
+                    }
+                    // 建物メッシュを除去
+                    if(c.mesh && c.parentGroup) {
+                        setTimeout(() => {
+                            if(c.parentGroup) c.parentGroup.remove(c.mesh);
+                        }, 300);
+                    }
+                    colliders.splice(bi, 1);
+                }
+            }
+        }
+        if(buildingHit) {
+            score += 500;
+            document.getElementById('score').textContent = score;
+            showNotif('BUILDING DESTROYED! +500');
+        } else {
+            // 地面への着弾エフェクト
+            createExplosion(targetPos.clone());
+        }
     }
 
     // Orient beam from UFO to target
@@ -1578,20 +1603,24 @@ let camShakeTimer = 0;
 let moveStreak = 0;
 let currentSpeed = 2.8;
 
-// ---- Speed trail particles ----
-const TRAIL_COUNT = 25;
+// ---- Speed trail particles (線状ストリーク) ----
+const TRAIL_COUNT = 30;
 const trailPool = [];
 for(let i=0;i<TRAIL_COUNT;i++){
     const m = new THREE.Mesh(
-        new THREE.SphereGeometry(0.55, 5, 4),
+        new THREE.BoxGeometry(0.15, 0.15, 1),
         new THREE.MeshBasicMaterial({color:0x00ffee, transparent:true, opacity:0, depthWrite:false})
     );
     m.visible = false;
     scene.add(m);
-    trailPool.push({mesh:m, age:0, maxAge:0});
+    trailPool.push({mesh:m, age:0, maxAge:0, streakLen:1});
 }
 let trailHead = 0;
 let trailEmitTimer = 0;
+const prevUfoPos = new THREE.Vector3();
+const ufoMoveDir = new THREE.Vector3(0, 0, -1);
+const _streakQuat = new THREE.Quaternion();
+const _zAxis = new THREE.Vector3(0, 0, 1);
 
 
 
@@ -1610,9 +1639,12 @@ function animate() {
         moveStreak = Math.max(0, moveStreak - delta * 2.5);
     }
     // 0→1 のブースト係数（0.6秒維持後にじわ上昇）
-    const boostT = Math.max(0, (moveStreak - 0.6) / 2.5);
+    const boostT = Math.max(0, (moveStreak - 1.2) / 2.5);
     const boostFactor = boostT * boostT; // ease-in
     currentSpeed = 2.8 + boostFactor * 18; // 最大 ~20.8
+
+    // UFO移動前の位置を記録（光跡方向計算用）
+    prevUfoPos.copy(ufo.position);
 
     if(keys['KeyW']||keys['ArrowUp'])   ufo.position.z -= currentSpeed;
     if(keys['KeyS']||keys['ArrowDown']) ufo.position.z += currentSpeed;
@@ -1620,26 +1652,42 @@ function animate() {
     if(keys['KeyD']||keys['ArrowRight'])ufo.position.x += currentSpeed;
     if(vStick.active){ ufo.position.x+=vStick.x*currentSpeed; ufo.position.z+=vStick.y*currentSpeed; }
 
-    // ---- Trail emission ----
+    // UFO移動方向を記録（光跡の向き用）
+    if(isMoving) {
+        const moveVec = new THREE.Vector3().subVectors(ufo.position, prevUfoPos);
+        moveVec.y = 0;
+        if(moveVec.length() > 0.01) ufoMoveDir.copy(moveVec).normalize();
+    }
+    prevUfoPos.copy(ufo.position);
+
+    // ---- Trail emission (線状ストリーク) ----
     const trailIntensity = boostFactor;
     if(trailIntensity > 0.05 && isMoving) {
         trailEmitTimer -= delta;
-        const emitInterval = Math.max(0.01, 0.06 - trailIntensity * 0.05);
+        const emitInterval = Math.max(0.008, 0.05 - trailIntensity * 0.04);
         if(trailEmitTimer <= 0) {
             trailEmitTimer = emitInterval;
             const t = trailPool[trailHead % TRAIL_COUNT];
             trailHead++;
             t.mesh.position.copy(ufo.position);
-            t.mesh.position.y -= 2 + Math.random() * 4;
+            t.mesh.position.y -= 1 + Math.random() * 3;
+            t.mesh.position.x += (Math.random()-0.5)*3;
+            t.mesh.position.z += (Math.random()-0.5)*3;
             // 速度に応じて色変化: 青→白熱
-            const hue = 0.45 - trailIntensity * 0.35; // 水色→黄
-            t.mesh.material.color.setHSL(hue, 1.0, 0.75);
+            const hue = 0.45 - trailIntensity * 0.35;
+            t.mesh.material.color.setHSL(hue, 1.0, 0.85);
             t.age = 1.0;
-            t.maxAge = 0.25 + trailIntensity * 0.35;
+            t.maxAge = 0.15 + trailIntensity * 0.25;
+            // ストリーク長さ（速度に比例）
+            t.streakLen = 4 + trailIntensity * 30;
+            // 移動方向に向ける
+            _streakQuat.setFromUnitVectors(_zAxis, ufoMoveDir);
+            t.mesh.quaternion.copy(_streakQuat);
+            t.mesh.scale.set(1.2, 1.2, t.streakLen);
             t.mesh.visible = true;
         }
     }
-    // Trail フェードアウト更新
+    // Trail フェードアウト更新（線のまま縮退）
     trailPool.forEach(t => {
         if(t.age > 0) {
             t.age -= delta / t.maxAge;
@@ -1648,9 +1696,10 @@ function animate() {
                 t.mesh.visible = false;
                 t.mesh.material.opacity = 0;
             } else {
-                t.mesh.material.opacity = t.age * 0.85;
-                const sc = 1.0 + (1 - t.age) * 1.8;
-                t.mesh.scale.setScalar(sc);
+                t.mesh.material.opacity = t.age * 0.9;
+                // 幅はそのまま、長さだけフェードに合わせて縮む
+                const w = 0.8 + t.age * 0.4;
+                t.mesh.scale.set(w, w, t.streakLen * Math.max(0.05, t.age));
             }
         }
     });
@@ -1850,7 +1899,7 @@ function animate() {
                 score+=t.score; abductCount++;
                 document.getElementById('score').textContent=score;
                 document.getElementById('count').textContent=abductCount;
-                showNotif('+'+t.score);
+                showNotif(t.title + '  +' + t.score);
                 collected.push({title:t.title,icon:t.icon,score:t.score,type:t.type});
                 scene.remove(t.mesh); targets.splice(i,1);
             }
@@ -1926,30 +1975,6 @@ function animate() {
     renderer.render(scene,camera);
 }
 
-// ======================================================
-// ENCYCLOPEDIA
-// ======================================================
-document.getElementById('encyclopedia-btn').onclick = () => {
-    const modal = document.getElementById('modal');
-    modal.style.display='block';
-    const grid = document.getElementById('card-grid');
-    grid.innerHTML='';
-    if(collected.length===0){
-        grid.innerHTML='<div style="color:#00ff8866;padding:40px;letter-spacing:2px">// まだ誰も拉致されていない //</div>';
-        return;
-    }
-    const byTitle={};
-    collected.forEach(c=>{ if(!byTitle[c.title]) byTitle[c.title]={...c,count:0}; byTitle[c.title].count++; });
-    Object.values(byTitle).forEach(item=>{
-        const card=document.createElement('div');
-        card.className='card';
-        const typeColor = {'human':'#00ff88','cow':'#ffcc44','horse':'#ff8833','bear':'#ff4444','wolf':'#8899ff','deer':'#ffaa44','eagle':'#aabbff','bison':'#cc8844','raccoon':'#aaaaaa','turkey':'#cc5533','alligator':'#44cc55','car':'#44aaff','truck':'#6688ff','bus':'#ffee22'}[item.type] || '#00ff88';
-        const abbr = item.title.slice(0,2);
-        card.innerHTML=`<div class="card-icon" style="width:48px;height:48px;border-radius:50%;background:${typeColor}22;border:2px solid ${typeColor};display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:18px;font-weight:bold;color:${typeColor};letter-spacing:1px">${abbr}</div><div class="card-title">${item.title}</div><div class="card-pts">${item.score} pts × ${item.count}</div>`;
-        grid.appendChild(card);
-    });
-};
-document.getElementById('close-btn').onclick=()=>document.getElementById('modal').style.display='none';
 window.addEventListener('resize',()=>{
     camera.aspect=window.innerWidth/window.innerHeight;
     camera.updateProjectionMatrix();
