@@ -178,10 +178,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-window.addEventListener('error', (e) => {
-    document.body.innerHTML = '<div style="color:#ff4444;font-family:monospace;padding:20px;background:#000;position:fixed;top:0;left:0;right:0;z-index:9999">' +
-        '<b>ERROR:</b> ' + e.message + '<br><small>' + (e.filename||'') + ':' + e.lineno + '</small></div>';
-});
 window.addEventListener('load', () => {
 
 // ======================================================
@@ -1658,10 +1654,6 @@ function animate() {
             }
         }
     });
-
-    // UFO リングを速度で色変化
-    const speedGlow = boostFactor;
-    ufoRing.material.emissive.setHSL(0.45 - speedGlow*0.35, 1.0, 0.5);
 
     ufo.position.y = 55 + Math.sin(time*0.8)*1.2;
     ufo.rotation.y = time*0.3;
