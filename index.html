@@ -772,7 +772,7 @@ function drawEntitySprite(obj){
 
 function drawEntityAscending(obj){
   if(!obj.ascending) return;
-  ctx.save(); ctx.globalAlpha=clamp(1-(obj.ascY/ufo.y)*.8,.2,1);
+  ctx.save(); ctx.globalAlpha=clamp(1-(obj.ascY/ufoGroup.position.y)*.8,.2,1);
   let cx=obj.ascX, cy=obj.ascY+obj.h/2, dir=obj.dir;
   switch(obj.type){
     case 'human':   drawHuman(cx,cy,dir,null,false);break;
@@ -856,11 +856,7 @@ function drawBackground(){
   hg.addColorStop(1,'rgba(180,75,15,0)');
   ctx.fillStyle=hg; ctx.fillRect(0,HORIZON-28,W,72);
 // ─── End of 2D Draw Functions (Maintained for Zukan Portraits) ────────────────
-// ─── Helpers ─────────────────────────────────────────────────────
-const rnd=(a,b)=>a+(b-a)*Math.random();
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
-const lerp=(a,b,t)=>a+(b-a)*t;
+
 
 function addFM(txt,x,y,col,sz=20){ 
   const el = document.createElement('div');
@@ -901,7 +897,6 @@ function init3D() {
   createTerrain();
   createStars();
 
-  window.addEventListener('resize', onResize);
 }
 
 function createUFO() {
