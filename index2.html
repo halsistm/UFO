@@ -30,34 +30,6 @@
             letter-spacing: 1px; opacity: 0.8;
         }
 
-        #sub-window-frame {
-            position: absolute; top: 20px; right: 20px;
-            width: 200px; height: 200px;
-            border: 2px solid #00ff8844;
-            border-radius: 50%;
-            box-shadow: 0 0 0 1px #00ff8822, 0 0 20px #00ff8833, inset 0 0 20px #00000066;
-            overflow: hidden; pointer-events: none;
-            background: #000000;
-        }
-
-        #crosshair {
-            position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            width: 50px; height: 50px;
-        }
-        #crosshair::before, #crosshair::after {
-            content: '';
-            position: absolute;
-            background: rgba(0, 255, 136, 0.6);
-        }
-        #crosshair::before { left: 50%; top: 0; width: 1px; height: 100%; transform: translateX(-50%); }
-        #crosshair::after { top: 50%; left: 0; width: 100%; height: 1px; transform: translateY(-50%); }
-        .crosshair-ring {
-            position: absolute; top: 50%; left: 50%;
-            border: 1px solid rgba(0,255,136,0.5);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-        }
 
         #controls {
             position: absolute; bottom: 30px; right: 20px;
@@ -84,7 +56,7 @@
         }
 
         #encyclopedia-btn {
-            position: absolute; top: 230px; right: 20px;
+            position: absolute; top: 20px; right: 20px;
             padding: 10px 20px;
             background: rgba(0,0,0,0.7);
             color: #00ff88;
@@ -195,11 +167,6 @@
     </div>
     <button id="encyclopedia-btn">[ 図鑑 ]</button>
 
-    <div id="sub-window-frame">
-        <div id="crosshair"></div>
-        <div class="crosshair-ring" style="width:80px;height:80px;"></div>
-        <div class="crosshair-ring" style="width:140px;height:140px; opacity:0.3;"></div>
-    </div>
 
     <div id="controls">
         <div class="btn" id="abduct-btn">ABDUCT</div>
@@ -255,7 +222,7 @@ window.addEventListener('load', () => {
 
     const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 800);
     camera.position.set(0, 40, 55);
-    const subCamera = new THREE.PerspectiveCamera(70, 1, 0.1, 300);
+
 
     // ===== LIGHTING =====
     // 夜空の雰囲気: 深い青みがかった環境光
@@ -502,7 +469,7 @@ window.addEventListener('load', () => {
     beamGroup.add(beamOuter, beamInner);
     scene.add(beamGroup);
 
-    ufo.position.y = 42;  // 32→42に上げる
+    ufo.position.y = 55;  // さらに上へ
     scene.add(ufo);
 
     // ===== TARGET CREATION (詳細モデル) =====
@@ -792,7 +759,7 @@ window.addEventListener('load', () => {
         }
 
         // UFOの浮遊
-        ufo.position.y = 42 + Math.sin(time * 0.8) * 1.2;  // 高度を上げる
+        ufo.position.y = 55 + Math.sin(time * 0.8) * 1.2;  // 高度をさらに上げる
         ufo.rotation.y = time * 0.3;
 
         // アンテナ赤点滅
@@ -800,15 +767,15 @@ window.addEventListener('load', () => {
 
         // ライト同期
         spotLight.position.copy(ufo.position);
-        // 照射点を画面中央寄り（少しUFOの位置に近づける）
+        // 照射点をさらに中央寄り（UFO真下ではなく原点寄り）
         lightTarget.position.set(
-            ufo.position.x * 0.6,
+            ufo.position.x * 0.3,
             0,
-            ufo.position.z * 0.6
+            ufo.position.z * 0.3
         );
         ufoPointLight.position.copy(ufo.position);
 
-        beamGroup.position.set(ufo.position.x, ufo.position.y - 34, ufo.position.z);
+        beamGroup.position.set(ufo.position.x, ufo.position.y - 46, ufo.position.z);
 
         // LED色サイクル
         const active = isAbducting || keys['Space'];
@@ -871,10 +838,11 @@ window.addEventListener('load', () => {
 
             // 吸い込み
             if(active && dist < 6) {
-                t.vy += (15 / t.weight);
+                t.vy += (3.5 / t.weight);   // 15→3.5 ゆっくり加速
+                if(t.vy > 0.6) t.vy = 0.6;  // 最大速度に上限
                 t.mesh.position.y += t.vy;
-                t.mesh.rotation.y += 0.15;
-                t.mesh.rotation.x += 0.05;
+                t.mesh.rotation.y += 0.06;
+                t.mesh.rotation.x += 0.02;
                 if(t.mesh.position.y > ufo.position.y - 2) {
                     score += t.score;
                     abductCount++;
@@ -901,29 +869,10 @@ window.addEventListener('load', () => {
         camLookTarget.lerp(ufo.position, 0.1);
         camera.lookAt(camLookTarget);
 
-        // サブカメラ（真下）
-        subCamera.position.set(ufo.position.x, ufo.position.y - 1, ufo.position.z);
-        subCamera.lookAt(ufo.position.x, 0, ufo.position.z);
-
         // === RENDER ===
         renderer.clear();
         renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
         renderer.render(scene, camera);
-
-        // サブウィンドウ（右上）
-        const sw = 200, sh = 200;
-        const sx = window.innerWidth - sw - 20;
-        const sy = window.innerHeight - sh - 20;  // WebGL座標は下から計算、right-top = innerHeight-sh-20
-        const syFromTop = 20;  // CSS上は20px
-        const syGL = window.innerHeight - syFromTop - sh;
-        renderer.setScissorTest(true);
-        renderer.setScissor(sx, syGL, sw, sh);
-        renderer.setViewport(sx, syGL, sw, sh);
-        renderer.setClearColor(0x000000, 1);
-        renderer.clear();
-        renderer.render(scene, subCamera);
-        renderer.setClearColor(0x000814, 1);
-        renderer.setScissorTest(false);
     }
 
     // ===== ENCYCLOPEDIA =====
