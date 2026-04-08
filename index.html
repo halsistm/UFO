@@ -428,7 +428,6 @@ function spawnBiomeObjects(group,cx,cz){
     const rng=createRNG(cx*100+cz);
     const biome=getBiome(cx*CHUNK_SIZE+CHUNK_SIZE/2,cz*CHUNK_SIZE+CHUNK_SIZE/2);
 
-    // ⚡ FAST MODE: ビルのみ生成、他は全スキップ
     if(isFastMode){
         if(biome===BIOME.URBAN){
             const count=3+Math.floor(rng()*3);
@@ -813,6 +812,9 @@ let apacheSpawnTimer=0;
 const APACHE_SPAWN_INTERVAL=60;
 let ufoHP=100,apacheWarningTimer=0;
 
+// アパッチがこの距離を超えたらリセット（見えない場所から攻撃されないよう）
+const APACHE_MAX_DIST=400;
+
 function makeApacheModel(){
     const g=new THREE.Group();
     const armyGreen=getMat(0x2d4a1e,0.8),darkGreen=getMat(0x1a2e12,0.85);
@@ -940,7 +942,7 @@ function updateExplosions(dt){
 // ======================================================
 const targets=[];
 let score=0,abductCount=0;
-let isFastMode=false; // ⚡ 光速モードフラグ
+let isFastMode=false;
 const collected=[];
 const clock=new THREE.Clock();
 const keys={};
@@ -1120,7 +1122,6 @@ function updateChunks(){
             buildChunk(cx,cz);activeChunks.add(key);
             if(!chunkTargetCount.has(key)){
                 chunkTargetCount.set(key,0);
-                // ⚡ 光速モード中はターゲットを生成しない
                 if(!isFastMode){
                     const biome=getBiome(cx*CHUNK_SIZE+CHUNK_SIZE/2,cz*CHUNK_SIZE+CHUNK_SIZE/2);
                     if(biome===BIOME.OCEAN||biome===BIOME.RIVER)return;
@@ -1203,7 +1204,7 @@ attackBtn.addEventListener('pointerdown',()=>{fireAttackBeam();});
 attackBtn.addEventListener('touchstart',e=>{e.preventDefault();fireAttackBeam();},{passive:false});
 
 // ======================================================
-// SPEED TRAIL SYSTEM (既存)
+// SPEED TRAIL SYSTEM
 // ======================================================
 const TRAIL_COUNT=30;
 const trailPool=[];
@@ -1216,19 +1217,27 @@ const prevUfoPos=new THREE.Vector3(),ufoMoveDir=new THREE.Vector3(0,0,-1);
 const _streakQuat=new THREE.Quaternion(),_zAxis=new THREE.Vector3(0,0,1);
 
 // ======================================================
-// ⚡ LED光跡システム — 12個のLED（偶数番号）が世界座標で残像を引く
+// ⚡ LED光跡システム — AKIRAバイク/SWワープ航法の極太線状光跡
 // ======================================================
 const LED_TRAIL_COUNT = 12;          // 使用するLED数（0,2,4...22番）
-const LED_TRAIL_POOL_SIZE = LED_TRAIL_COUNT * 20; // プールサイズ
+const LED_TRAIL_POOL_SIZE = LED_TRAIL_COUNT * 22;
 const _ledTrailPool = [];
 const _ledTrailActive = [];
 const _ledWorldPos = new THREE.Vector3();
-// LED残像用の球体（小さめ、depthWrite:false）
-const _ledTrailGeo = new THREE.SphereGeometry(0.30, 5, 4);
+
+// BoxGeometry(1,1,1)を移動方向にスケールして極太ストリーク化
+// AdditiveBlendingで重なるほど輝く
+const _ledTrailGeo = new THREE.BoxGeometry(1.0, 1.0, 1.0);
 for(let i=0;i<LED_TRAIL_POOL_SIZE;i++){
     const m=new THREE.Mesh(
         _ledTrailGeo,
-        new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0,depthWrite:false})
+        new THREE.MeshBasicMaterial({
+            color:0xffffff,
+            transparent:true,
+            opacity:0,
+            depthWrite:false,
+            blending:THREE.AdditiveBlending
+        })
     );
     m.visible=false;
     scene.add(m);
@@ -1254,9 +1263,7 @@ function animate(){
     const boostFactor=boostT*boostT;
     currentSpeed=2.8+boostFactor*18;
 
-    // ⚡ 光速モード判定（boostFactor > 0.7 で発動）
     isFastMode=boostFactor>0.7;
-    // 速度インジケーター更新
     speedIndicator.style.opacity=boostFactor>0.5?Math.min((boostFactor-0.5)*4,1).toFixed(2):'0';
 
     prevUfoPos.copy(ufo.position);
@@ -1293,8 +1300,9 @@ function animate(){
     });
 
     // ======================================================
-    // ⚡ LED光跡 — 毎フレームLEDの世界座標に残像を生成
-    // boostFactor > 0.05 から徐々に出現、光速になるほど長く太くなる
+    // ⚡ LED光跡 — AKIRAバイク/SWハイパースペース
+    // 各LEDから移動方向後方へ極太の半透明ストリークを引く
+    // AdditiveBlendingで重なった部分がより明るく輝く
     // ======================================================
     if(boostFactor>0.05&&isMoving){
         for(let li=0;li<LED_TRAIL_COUNT;li++){
@@ -1309,22 +1317,32 @@ function animate(){
             }
             if(!p)continue;
 
-            // LEDの現在の色相に合わせる
             const hue=((ledIdx/24)+time*0.4)%1;
+
+            // AKIRAワープ光跡：移動方向後方へ伸びる極太線状ストリーク
+            const streakLen=4+boostFactor*80;
+            const thickness=1.0+boostFactor*4.5;
+            const initOpacity=Math.min(boostFactor*1.8,0.90);
+
+            // LEDの世界座標から、移動方向の逆側に中心をずらす
             p.position.copy(_ledWorldPos);
-            p.material.color.setHSL(hue,1.0,0.88);
-            // 初期不透明度と大きさ：光速に比例して太く
-            const initOpacity=Math.min(boostFactor*1.4,0.95);
-            const initScale=0.5+boostFactor*1.8;
+            p.position.addScaledVector(ufoMoveDir,-streakLen*0.5);
+
+            // BoxのZ軸を移動方向に向ける
+            _streakQuat.setFromUnitVectors(_zAxis,ufoMoveDir);
+            p.quaternion.copy(_streakQuat);
+            p.scale.set(thickness,thickness,streakLen);
+
+            p.material.color.setHSL(hue,1.0,0.98);
             p.material.opacity=initOpacity;
-            p.scale.setScalar(initScale);
             p.visible=true;
 
-            const maxAge=0.06+boostFactor*0.28;
-            _ledTrailActive.push({m:p,age:0,maxAge,initOpacity,initScale});
+            const maxAge=0.04+boostFactor*0.15;
+            _ledTrailActive.push({m:p,age:0,maxAge,initOpacity,streakLen,thickness});
         }
     }
-    // LED残像の更新（フェードアウト）
+
+    // LED線状光跡の更新（前端ほぼ固定・後端が縮退しながらフェード）
     for(let i=_ledTrailActive.length-1;i>=0;i--){
         const t=_ledTrailActive[i];
         t.age+=delta;
@@ -1335,9 +1353,10 @@ function animate(){
             continue;
         }
         const prog=t.age/t.maxAge;
-        // 2乗でシャープにフェード
+        const lenNow=t.streakLen*(1-prog*0.5);
+        const thinNow=t.thickness*(1-prog*0.65);
+        t.m.scale.set(thinNow,thinNow,lenNow);
         t.m.material.opacity=t.initOpacity*(1-prog*prog);
-        t.m.scale.setScalar(t.initScale*(1-prog*0.55));
     }
 
     ufo.position.y=55+Math.sin(time*0.8)*1.2;
@@ -1412,6 +1431,14 @@ function animate(){
         ap.mainRotor.rotation.y+=0.35;ap.tailRotor.rotation.x+=0.4;
         const dx=ufo.position.x-ap.mesh.position.x,dy=ufo.position.y-ap.mesh.position.y,dz=ufo.position.z-ap.mesh.position.z;
         const dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
+
+        // 距離が遠すぎたらリセット（光速移動で引き離した場合）
+        if(dist>APACHE_MAX_DIST){
+            scene.remove(ap.mesh);
+            apaches.splice(i,1);
+            continue;
+        }
+
         if(dist>35){ap.mesh.position.x+=dx/dist*0.55;ap.mesh.position.y+=dy/dist*0.2;ap.mesh.position.z+=dz/dist*0.55;}
         ap.mesh.lookAt(ufo.position);
         ap.shootTimer-=delta;
@@ -1431,14 +1458,13 @@ function animate(){
     }
 
     // ======================================================
-    // ターゲット更新 — ⚡ 光速モード中はAIをスキップ、吸い込みのみ処理
+    // ターゲット更新
     // ======================================================
     for(let i=targets.length-1;i>=0;i--){
         const t=targets[i];
         const dx=t.mesh.position.x-ufo.position.x,dz=t.mesh.position.z-ufo.position.z;
         const dist=Math.sqrt(dx*dx+dz*dz);
 
-        // ⚡ 光速モード中はAI（逃走・徘徊・アニメーション）をスキップ
         if(!isFastMode){
             if(t.mesh.position.y<=0.1){
                 if(dist<t.fleeDist&&abductActive){
@@ -1454,7 +1480,6 @@ function animate(){
             }
         }
 
-        // 吸い込み処理は光速モードでも常に動作
         if(abductActive&&dist<6){
             t.vy+=3.5/t.weight;if(t.vy>0.6)t.vy=0.6;
             t.mesh.position.y+=t.vy;t.mesh.rotation.y+=0.06;t.mesh.rotation.x+=0.02;
@@ -1494,7 +1519,6 @@ function animate(){
         }
     }
 
-    // ⚡ 光速モード中はチャンク更新頻度を1/3に削減
     chunkUpdateTimer++;
     if(chunkUpdateTimer>=(isFastMode?90:30)){chunkUpdateTimer=0;updateChunks();}
 
