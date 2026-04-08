@@ -256,8 +256,7 @@ renderer.autoClear = false;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 2.2;
-renderer.physicallyCorrectLights = true;
+renderer.toneMappingExposure = 2.0;
 document.body.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 800);
@@ -630,23 +629,23 @@ scene.add(ufo);
 // ======================================================
 
 // 1) メインスポットライト（地面を強く照らす）
-const spotLight = new THREE.SpotLight(0x88ffcc, 80, 300, Math.PI/6, 0.35, 1.2);
+const spotLight = new THREE.SpotLight(0x88ffcc, 3.5, 300, Math.PI/6, 0.35, 0);
 scene.add(spotLight); spotLight.castShadow = true;
 spotLight.shadow.mapSize.set(1024,1024);
 const lightTarget = new THREE.Object3D(); scene.add(lightTarget);
 spotLight.target = lightTarget;
 
 // 2) UFO周囲の環境ポイントライト（UFO自体を発光させる）
-const ufoPointLight = new THREE.PointLight(0x00ffcc, 8, 60);
+const ufoPointLight = new THREE.PointLight(0x00ffcc, 4, 80);
 scene.add(ufoPointLight);
 
-// 3) UFO下面のグロー地面照明（弱め・広め）
-const ufoGroundLight = new THREE.PointLight(0x33ffaa, 4, 120);
+// 3) UFO下面のグロー地面照明（広め）
+const ufoGroundLight = new THREE.PointLight(0x33ffaa, 2.5, 150);
 scene.add(ufoGroundLight);
 
-// 4) LEDカラーアクセントライト（横方向に色を広げる）
-const ufoColorLight1 = new THREE.PointLight(0xff44cc, 3, 50);
-const ufoColorLight2 = new THREE.PointLight(0x44ccff, 3, 50);
+// 4) LEDカラーアクセントライト
+const ufoColorLight1 = new THREE.PointLight(0xff44cc, 2, 70);
+const ufoColorLight2 = new THREE.PointLight(0x44ccff, 2, 70);
 scene.add(ufoColorLight1);
 scene.add(ufoColorLight2);
 
@@ -1276,33 +1275,28 @@ function animate() {
     // ビーム表示切替 & 光強度
     beamGroup.visible = active;
     if(active){
-        // スポット強化
-        spotLight.intensity = 120; spotLight.color.setHex(0x88ffee);
+        spotLight.intensity = 6.0; spotLight.color.setHex(0x88ffee);
         spotLight.angle = Math.PI/7;
-        // ポイントライト強化
-        ufoPointLight.color.setHex(0x00ffee); ufoPointLight.intensity = 18; ufoPointLight.distance = 90;
-        ufoGroundLight.intensity = 12; ufoGroundLight.distance = 160;
-        ufoColorLight1.intensity = 6; ufoColorLight2.intensity = 6;
-        // ビーム不透明度アニメ（高速flicker）
+        ufoPointLight.color.setHex(0x00ffee); ufoPointLight.intensity = 8; ufoPointLight.distance = 100;
+        ufoGroundLight.intensity = 5; ufoGroundLight.distance = 180;
+        ufoColorLight1.intensity = 3.5; ufoColorLight2.intensity = 3.5;
         const flicker = 1.0 + Math.sin(time*30)*0.12 + Math.sin(time*47)*0.08;
         beamOuter.material.opacity = 0.055 * flicker;
         beamMid.material.opacity  = 0.10 * flicker;
         beamInner.material.opacity = 0.22 * flicker;
         beamCore.material.opacity  = 0.30 * flicker;
         beamGlow.material.opacity  = 0.30 + Math.sin(time*8)*0.10;
-        // ビーム内ライト強度
-        beamLight1.intensity = 8 + Math.sin(time*6)*2;
-        beamLight2.intensity = 7 + Math.sin(time*7)*2;
-        beamLight3.intensity = 14 + Math.sin(time*5)*4;
-        // UFO本体も輝く
+        beamLight1.intensity = 4 + Math.sin(time*6)*1;
+        beamLight2.intensity = 3.5 + Math.sin(time*7)*1;
+        beamLight3.intensity = 6 + Math.sin(time*5)*2;
         bodyMat.emissiveIntensity = 1.2 + Math.sin(time*4)*0.4;
         bodyMat.emissive.setHex(0x003344);
     } else {
-        spotLight.intensity = 35; spotLight.color.setHex(0x55ccff);
+        spotLight.intensity = 1.8; spotLight.color.setHex(0x55ccff);
         spotLight.angle = Math.PI/5;
-        ufoPointLight.color.setHex(0x00cc88); ufoPointLight.intensity = 6; ufoPointLight.distance = 60;
-        ufoGroundLight.intensity = 3; ufoGroundLight.distance = 100;
-        ufoColorLight1.intensity = 2; ufoColorLight2.intensity = 2;
+        ufoPointLight.color.setHex(0x00cc88); ufoPointLight.intensity = 3; ufoPointLight.distance = 80;
+        ufoGroundLight.intensity = 1.5; ufoGroundLight.distance = 130;
+        ufoColorLight1.intensity = 1.2; ufoColorLight2.intensity = 1.2;
         bodyMat.emissiveIntensity = 0.4 + Math.sin(time*1.5)*0.15;
         bodyMat.emissive.setHex(0x112233);
         beamLight1.intensity = 0; beamLight2.intensity = 0; beamLight3.intensity = 0;
