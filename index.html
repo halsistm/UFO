@@ -1181,9 +1181,76 @@ function startGame() {
   for(let i=0; i<10; i++) spawn3DObject();
 }
 function startLevel(idx) { curStageIdx = idx; startGame(); }
-function openMap() { state='map'; document.getElementById('mov').style.display='flex'; document.getElementById('ov').style.display='none'; if(typeof drawMap === 'function') drawMap(); }
+function openMap() { 
+  state='map'; 
+  document.getElementById('mov').style.display='flex'; 
+  document.getElementById('ov').style.display='none'; 
+  drawMap(); 
+}
 function checkGameOver() { if(ufoHP <= 0) { state = 'over'; document.getElementById('ov').style.display = 'flex'; document.getElementById('ov').innerHTML = `<h1>GAME OVER</h1><button class="btn" onclick="location.reload()">RELOAD</button>`; } }
 function checkStageClear() { const st = STAGES[curStageIdx]; if(stageCaptures >= st.goal) { state = 'clear'; document.getElementById('scov').style.display='flex'; document.getElementById('sc-stats').innerHTML=`捕獲: ${stageCaptures}/${st.goal} | スコア: ${score}`; if(curStageIdx === unlockedIdx && unlockedIdx < STAGES.length-1){ unlockedIdx++; localStorage.setItem('ufo_unlocked', unlockedIdx); } } }
+
+// ─── Map Interaction ──────────────────────────────────────────────────
+let actStHover = -1;
+function drawMap() {
+  const mc = document.getElementById('mc');
+  if(!mc) return;
+  const mctx = mc.getContext('2d');
+  mctx.clearRect(0,0,mc.width,mc.height);
+  // Lines
+  mctx.strokeStyle='rgba(100,200,255,0.4)'; mctx.lineWidth=3;
+  mctx.beginPath();
+  for(let i=0; i<STAGES.length-1; i++) {
+    mctx.moveTo(STAGES[i].x, STAGES[i].y);
+    mctx.lineTo(STAGES[i+1].x, STAGES[i+1].y);
+  }
+  mctx.stroke();
+  
+  // Nodes
+  STAGES.forEach((st, i) => {
+    const isU = i <= unlockedIdx;
+    const isHov = i === actStHover;
+    mctx.fillStyle = isU ? (isHov ? '#ffdd55' : '#7ff0ff') : '#334466';
+    mctx.strokeStyle = '#fff';
+    mctx.lineWidth = 2;
+    mctx.beginPath();
+    mctx.arc(st.x, st.y, isHov?15:10, 0, Math.PI*2);
+    mctx.fill(); mctx.stroke();
+  });
+}
+
+function initMapEvents() {
+  const mc = document.getElementById('mc');
+  if(!mc) return;
+  mc.addEventListener('mousemove', e => {
+    if(state !== 'map') return;
+    const rect = mc.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (mc.width / rect.width);
+    const y = (e.clientY - rect.top) * (mc.height / rect.height);
+    actStHover = -1;
+    let found = false;
+    STAGES.forEach((st, i) => {
+      if(i <= unlockedIdx && Math.hypot(st.x - x, st.y - y) < 20) {
+        actStHover = i; found = true;
+        document.getElementById('m-st-name').textContent = `STAGE ${i+1}: ${st.name}`;
+        document.getElementById('m-st-goal').textContent = `目標: 捕獲 ${st.goal}体 | ${st.desc}`;
+        const btn = document.getElementById('m-st-btn');
+        btn.style.display = 'inline-block';
+        btn.onclick = () => { startLevel(i); };
+      }
+    });
+    if(!found) {
+      document.getElementById('m-st-name').textContent = 'ステージを選択';
+      document.getElementById('m-st-goal').textContent = '-';
+      document.getElementById('m-st-btn').style.display = 'none';
+    }
+    drawMap();
+  });
+  mc.addEventListener('click', () => {
+    if(actStHover !== -1) startLevel(actStHover);
+  });
+}
+window.addEventListener('DOMContentLoaded', initMapEvents);
 
 // ─── VARIANTS DATA ──────────────────────────────────────────────────
 var RARITY_COLORS={
@@ -1441,9 +1508,12 @@ function showCardDetail(entry){
 
 
 // Title UFO mini animation
-(function(){
-  let tc=document.getElementById('titleUFO'), tcx=tc.getContext('2d');
-  let tft=0;
+setTimeout(function(){
+  try {
+    let tc=document.getElementById('titleUFO');
+    if(!tc) return;
+    let tcx=tc.getContext('2d');
+    let tft=0;
   function ta(){
     tcx.clearRect(0,0,160,100);
     tft+=.02;
@@ -1476,32 +1546,38 @@ function showCardDetail(entry){
     requestAnimationFrame(ta);
   }
   ta();
-})();
+  } catch(e) { console.error("Title UFO Anim Error:", e); }
+}, 100);
+
+window.addEventListener('DOMContentLoaded', () => {
 
 // ─── Init & UI Listeners ──────────────────────────────────────────
-totalVariants = Object.values(VARIANTS).reduce((a, v) => a + v.length, 0);
-
-// Set up UI event listeners
-document.getElementById('stbtn').onclick = () => openMap();
-document.getElementById('zbtn').onclick = () => toggleZukan();
-document.getElementById('upbtn').onclick = () => toggleUpgrade();
-document.getElementById('clo').onclick = () => toggleUpgrade();
-document.getElementById('zclo').onclick = () => toggleZukan();
-document.getElementById('cdcard-close').onclick = () => { document.getElementById('cdov').style.display='none'; };
-document.getElementById('sc-btn').onclick = () => { document.getElementById('scov').style.display='none'; openMap(); };
-document.getElementById('m-st-btn').onclick = () => { startGame(); };
+try {
+  totalVariants = Object.values(VARIANTS).reduce((a, v) => a + v.length, 0);
+  
+  document.getElementById('stbtn').addEventListener('click', () => { openMap(); });
+  document.getElementById('zbtn').addEventListener('click', () => toggleZukan());
+  document.getElementById('upbtn').addEventListener('click', () => toggleUpgrade());
+  document.getElementById('clo').addEventListener('click', () => toggleUpgrade());
+  document.getElementById('zclo').addEventListener('click', () => toggleZukan());
+  document.getElementById('cdcard-close').addEventListener('click', () => { document.getElementById('cdov').style.display='none'; });
+  document.getElementById('sc-btn').addEventListener('click', () => { document.getElementById('scov').style.display='none'; openMap(); });
+  document.getElementById('m-st-btn').addEventListener('click', () => { startGame(); });
+} catch(e) { console.error("Listener error:", e); }
 
 // Helper to open upgrade panel
-function toggleUpgrade() {
+window.toggleUpgrade = function() {
   const p = document.getElementById('upanel');
   const open = p.style.display === 'block';
   if(open) p.style.display = 'none';
   else { renderUpgrades(); p.style.display = 'block'; }
 }
 
-// Start Engine
-init3D();
+try {
+  init3D();
+} catch (e) { console.error("init3D Error:", e); }
 animate();
+});
 </script>
 </body>
 </html>
