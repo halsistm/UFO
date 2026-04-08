@@ -151,25 +151,6 @@
     <div id="pip-label">DOWNWARD CAM</div>
     <div id="pip-ch"></div>
   </div>
-</div>
-  <!-- 大マップ -->
-  <div id="mov" style="position:absolute;inset:0;background:rgba(4,8,28,0.98);z-index:300;display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
-    <h2 style="color:#7ff0ff;margin-bottom:15px;text-shadow:0 0 10px #00eeff;font-size:min(20px, 4vw)">🌎 アメリカ大陸横断マップ</h2>
-    <div id="m-cont" style="position:relative;width:95vw;max-width:800px;aspect-ratio:800/500;background:rgba(0,10,30,0.4);border:2px solid rgba(100,200,255,0.3);border-radius:15px;overflow:hidden;box-shadow:0 0 40px rgba(0,0,0,0.5)">
-      <canvas id="mc" width="800" height="500" style="width:100%;height:100%;display:block"></canvas>
-    </div>
-    <div id="m-info" style="margin-top:15px;color:#fff;text-align:center;width:95vw;max-width:800px">
-      <div id="m-st-name" style="font-size:min(22px, 5vw);font-weight:900;color:#7ff0ff">ステージを選択</div>
-      <div id="m-st-goal" style="font-size:min(13px, 3.5vw);color:rgba(255,255,255,0.7);max-width:600px;margin:0 auto">-</div>
-      <button class="btn" id="m-st-btn" style="margin-top:12px;padding:8px 30px;font-size:15px;display:none">ミッション開始</button>
-    </div>
-  </div>
-  <!-- Stage Clear -->
-  <div id="scov" style="position:absolute;inset:0;background:rgba(0,0,0,0.8);z-index:400;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center">
-    <h1 style="font-size:80px;color:#ffdd55;text-shadow:0 0 30px #ffaa00;margin-bottom:10px">STAGE CLEAR!</h1>
-    <div class="sub" style="font-size:24px">ミッション完了！</div>
-    <div id="sc-stats" style="color:#fff;margin:20px 0;font-size:18px"></div>
-    <button class="btn" id="sc-btn">次へ進む</button>
   </div>
 </div>
 
@@ -772,7 +753,7 @@ function drawEntitySprite(obj){
 
 function drawEntityAscending(obj){
   if(!obj.ascending) return;
-  ctx.save(); ctx.globalAlpha=clamp(1-(obj.ascY/ufoGroup.position.y)*.8,.2,1);
+  ctx.save(); ctx.globalAlpha=clamp(1-(obj.ascY/(ufoGroup ? ufoGroup.position.y : 40))*.8,.2,1);
   let cx=obj.ascX, cy=obj.ascY+obj.h/2, dir=obj.dir;
   switch(obj.type){
     case 'human':   drawHuman(cx,cy,dir,null,false);break;
@@ -856,7 +837,8 @@ function drawBackground(){
   hg.addColorStop(1,'rgba(180,75,15,0)');
   ctx.fillStyle=hg; ctx.fillRect(0,HORIZON-28,W,72);
 // ─── End of 2D Draw Functions (Maintained for Zukan Portraits) ────────────────
-
+// ─── Helpers ─────────────────────────────────────────────────────
+// Utility functions were already declared at line 209-212 and are removed here to prevent syntax errors.
 
 function addFM(txt,x,y,col,sz=20){ 
   const el = document.createElement('div');
@@ -897,6 +879,7 @@ function init3D() {
   createTerrain();
   createStars();
 
+  window.addEventListener('resize', onResize);
 }
 
 function createUFO() {
@@ -989,11 +972,9 @@ function animate() {
 }
 
 function spawn3DObject() {
-  const st = STAGES[curStageIdx];
   const pool = [];
   OBJ_TYPES.forEach(tp => {
-    let weight = 10;
-    if(st.type==='rural' && ['cow','sheep','chicken','pig'].includes(tp.type)) weight=40;
+    let weight = tp.weight < 100 ? 3 : 1; // Basic weighting
     for(let i=0;i<weight;i++) pool.push(tp);
   });
   const tp = pool[Math.floor(Math.random()*pool.length)];
@@ -1120,11 +1101,10 @@ function captureObject(target) {
   target.userData.captured = true;
   scene.remove(target);
   objects = objects.filter(o => o !== target);
-  captures++; stageCaptures++;
+  captures++;
   score += target.userData.score || 100;
   addToCollection({type: target.userData.type, variantIdx: target.userData.variantIdx});
   updateHUD();
-  checkStageClear();
   beamOn = false;
   addFM('+'+(target.userData.score||100)+'pt!', 0, 0, '#7ff0ff', 24);
 }
@@ -1157,11 +1137,12 @@ function update3DAlerts(dt) {
 }
 
 function onResize() {
-  const canvas = document.getElementById('c');
   const W = window.innerWidth, H = window.innerHeight;
-  renderer.setSize(W, H);
-  camera.aspect = W/H;
-  camera.updateProjectionMatrix();
+  if(renderer) renderer.setSize(W, H);
+  if(camera) {
+    camera.aspect = W/H;
+    camera.updateProjectionMatrix();
+  }
 }
 
 window.addEventListener('keydown', e => { keys[e.code] = true; if(e.code==='KeyU') toggleUpgrade(); if(e.code==='KeyZ') toggleZukan(); });
@@ -1169,83 +1150,25 @@ window.addEventListener('keyup', e => keys[e.code] = false);
 window.addEventListener('mousemove', e => { mouse.vx = e.movementX || 0; });
 
 function startGame() {
-  state='playing'; score=0; captures=0; ufoHP=UFO_MAX_HP; alertLv=0; stageCaptures=0; 
+  state='playing'; score=0; captures=0; ufoHP=UFO_MAX_HP; alertLv=0;
   objects.forEach(o=>scene.remove(o)); police.forEach(p=>scene.remove(p)); military.forEach(m=>scene.remove(m));
   objects=[]; police=[]; military=[]; ufoGroup.position.set(0, 40, 0); ufoGroup.rotation.y = 0;
-  document.getElementById('ov').style.display='none'; document.getElementById('mov').style.display='none';
+  document.getElementById('ov').style.display='none';
   for(let i=0; i<10; i++) spawn3DObject();
+  updateHUD();
 }
-function startLevel(idx) { curStageIdx = idx; startGame(); }
-function openMap() { 
-  state='map'; 
-  document.getElementById('mov').style.display='flex'; 
-  document.getElementById('ov').style.display='none'; 
-  drawMap(); 
-}
-function checkGameOver() { if(ufoHP <= 0) { state = 'over'; document.getElementById('ov').style.display = 'flex'; document.getElementById('ov').innerHTML = `<h1>GAME OVER</h1><button class="btn" onclick="location.reload()">RELOAD</button>`; } }
-function checkStageClear() { const st = STAGES[curStageIdx]; if(stageCaptures >= st.goal) { state = 'clear'; document.getElementById('scov').style.display='flex'; document.getElementById('sc-stats').innerHTML=`捕獲: ${stageCaptures}/${st.goal} | スコア: ${score}`; if(curStageIdx === unlockedIdx && unlockedIdx < STAGES.length-1){ unlockedIdx++; localStorage.setItem('ufo_unlocked', unlockedIdx); } } }
+function checkGameOver() { if(ufoHP <= 0) { state = 'over'; document.getElementById('ov').style.display = 'flex'; document.getElementById('ov').innerHTML = `<h1>GAME OVER</h1><div class="sub">スコア: ${score}</div><button class="btn" onclick="location.reload()">RELOAD</button>`; } }
 
-// ─── Map Interaction ──────────────────────────────────────────────────
-let actStHover = -1;
-function drawMap() {
-  const mc = document.getElementById('mc');
-  if(!mc) return;
-  const mctx = mc.getContext('2d');
-  mctx.clearRect(0,0,mc.width,mc.height);
-  // Lines
-  mctx.strokeStyle='rgba(100,200,255,0.4)'; mctx.lineWidth=3;
-  mctx.beginPath();
-  for(let i=0; i<STAGES.length-1; i++) {
-    mctx.moveTo(STAGES[i].x, STAGES[i].y);
-    mctx.lineTo(STAGES[i+1].x, STAGES[i+1].y);
-  }
-  mctx.stroke();
-  
-  // Nodes
-  STAGES.forEach((st, i) => {
-    const isU = i <= unlockedIdx;
-    const isHov = i === actStHover;
-    mctx.fillStyle = isU ? (isHov ? '#ffdd55' : '#7ff0ff') : '#334466';
-    mctx.strokeStyle = '#fff';
-    mctx.lineWidth = 2;
-    mctx.beginPath();
-    mctx.arc(st.x, st.y, isHov?15:10, 0, Math.PI*2);
-    mctx.fill(); mctx.stroke();
-  });
+function updateHUD() {
+  const el = id => document.getElementById(id);
+  if(!el('sd')) return;
+  el('sd').textContent = score;
+  el('cc').textContent = captures;
+  el('hpf').style.width = Math.max(0, (ufoHP/UFO_MAX_HP)*100) + '%';
+  el('alf').style.width = Math.min(100, alertLv) + '%';
+  el('alt').textContent = alertLv < 30 ? '平和' : (alertLv < 70 ? '警察' : '軍隊');
+  el('zbadge').textContent = collection.length;
 }
-
-function initMapEvents() {
-  const mc = document.getElementById('mc');
-  if(!mc) return;
-  mc.addEventListener('mousemove', e => {
-    if(state !== 'map') return;
-    const rect = mc.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (mc.width / rect.width);
-    const y = (e.clientY - rect.top) * (mc.height / rect.height);
-    actStHover = -1;
-    let found = false;
-    STAGES.forEach((st, i) => {
-      if(i <= unlockedIdx && Math.hypot(st.x - x, st.y - y) < 20) {
-        actStHover = i; found = true;
-        document.getElementById('m-st-name').textContent = `STAGE ${i+1}: ${st.name}`;
-        document.getElementById('m-st-goal').textContent = `目標: 捕獲 ${st.goal}体 | ${st.desc}`;
-        const btn = document.getElementById('m-st-btn');
-        btn.style.display = 'inline-block';
-        btn.onclick = () => { startLevel(i); };
-      }
-    });
-    if(!found) {
-      document.getElementById('m-st-name').textContent = 'ステージを選択';
-      document.getElementById('m-st-goal').textContent = '-';
-      document.getElementById('m-st-btn').style.display = 'none';
-    }
-    drawMap();
-  });
-  mc.addEventListener('click', () => {
-    if(actStHover !== -1) startLevel(actStHover);
-  });
-}
-window.addEventListener('DOMContentLoaded', initMapEvents);
 
 // ─── VARIANTS DATA ──────────────────────────────────────────────────
 var RARITY_COLORS={
@@ -1550,14 +1473,12 @@ window.addEventListener('DOMContentLoaded', () => {
 try {
   totalVariants = Object.values(VARIANTS).reduce((a, v) => a + v.length, 0);
   
-  document.getElementById('stbtn').addEventListener('click', () => { openMap(); });
+  document.getElementById('stbtn').addEventListener('click', () => { startGame(); });
   document.getElementById('zbtn').addEventListener('click', () => toggleZukan());
   document.getElementById('upbtn').addEventListener('click', () => toggleUpgrade());
   document.getElementById('clo').addEventListener('click', () => toggleUpgrade());
   document.getElementById('zclo').addEventListener('click', () => toggleZukan());
   document.getElementById('cdcard-close').addEventListener('click', () => { document.getElementById('cdov').style.display='none'; });
-  document.getElementById('sc-btn').addEventListener('click', () => { document.getElementById('scov').style.display='none'; openMap(); });
-  document.getElementById('m-st-btn').addEventListener('click', () => { startGame(); });
 } catch(e) { console.error("Listener error:", e); }
 
 // Helper to open upgrade panel
