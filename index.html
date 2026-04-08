@@ -6,8 +6,8 @@
 <title>UFO キャトルミューティレーション</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#08071a;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden;font-family:'Segoe UI',sans-serif;user-select:none}
-  #gc{position:relative;display:inline-block}
+  body{background:#08071a;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden;font-family:'Segoe UI',sans-serif;user-select:none;-webkit-touch-callout:none;-webkit-user-select:none;touch-action:none}
+  #gc{position:relative;display:inline-block;overflow:hidden;touch-action:none}
   canvas{display:block;border-radius:8px;box-shadow:0 0 80px rgba(80,200,255,.35)}
   #hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;padding:12px 16px;pointer-events:none}
   .panel{background:rgba(0,0,0,.6);border:1px solid rgba(100,220,255,.3);border-radius:10px;padding:8px 14px;backdrop-filter:blur(6px);pointer-events:all}
@@ -138,6 +138,25 @@
     <button class="btn" id="stbtn">🎮 ゲーム開始</button>
   </div>
   <div id="ctrl">マウス: UFO移動 &nbsp;|&nbsp; クリック / Space: ビーム &nbsp;|&nbsp; U: 強化パネル &nbsp;|&nbsp; Z: 図鑑</div>
+  <!-- 大マップ -->
+  <div id="mov" style="position:absolute;inset:0;background:rgba(4,8,28,0.98);z-index:300;display:none;flex-direction:column;align-items:center;justify-content:center;">
+    <h2 style="color:#7ff0ff;margin-bottom:20px;text-shadow:0 0 10px #00eeff">🌎 アメリカ大陸横断マップ</h2>
+    <div id="m-cont" style="position:relative;width:800px;height:500px;background:rgba(255,255,255,0.05);border:2px solid rgba(100,200,255,0.3);border-radius:20px;overflow:hidden;">
+      <canvas id="mc" width="800" height="500"></canvas>
+    </div>
+    <div id="m-info" style="margin-top:20px;color:#fff;text-align:center;">
+      <div id="m-st-name" style="font-size:24px;font-weight:900;color:#7ff0ff">ステージを選択</div>
+      <div id="m-st-goal" style="font-size:14px;color:rgba(255,255,255,0.6)">-</div>
+      <button class="btn" id="m-st-btn" style="margin-top:15px;display:none">ミッション開始</button>
+    </div>
+  </div>
+  <!-- Stage Clear -->
+  <div id="scov" style="position:absolute;inset:0;background:rgba(0,0,0,0.8);z-index:400;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+    <h1 style="font-size:80px;color:#ffdd55;text-shadow:0 0 30px #ffaa00;margin-bottom:10px">STAGE CLEAR!</h1>
+    <div class="sub" style="font-size:24px">ミッション完了！</div>
+    <div id="sc-stats" style="color:#fff;margin:20px 0;font-size:18px"></div>
+    <button class="btn" id="sc-btn">次へ進む</button>
+  </div>
 </div>
 
 <script>
@@ -187,11 +206,44 @@ let ufo={x:W/2,y:H*.25,vx:0,vy:0,ft:0};
 let mx=W/2, my=H*.25;
 let comicFont='900 italic 20px "Arial Black",Arial,sans-serif';
 
+// ─── Stage Data ──────────────────────────────────────────────────
+const STAGES = [
+  {id:'ks', name:'カンザス農場', goal:15, x:180, y:300, clear:false, type:'rural', desc:'静かな農村。牛や鶏をターゲットにせよ。', bgCol:'#c07040'},
+  {id:'nv', name:'ナッシュビル閑静な住宅街', goal:25, x:360, y:340, clear:false, type:'town', desc:'人々が集まり始めた。警察の巡回に注意。', bgCol:'#508040'},
+  {id:'ch', name:'シカゴ郊外', goal:35, x:480, y:220, clear:false, type:'suburbs', desc:'工業地帯の近く。大型トラックや逃げ足の速い犬が多い。', bgCol:'#606070'},
+  {id:'dc', name:'ワシントンD.C. 首都圏', goal:45, x:650, y:260, clear:false, type:'capital', desc:'政府機関が密集。エージェントが目を光らせている。', bgCol:'#404090'},
+  {id:'ny', name:'ニューヨーク大都会', goal:60, x:720, y:180, clear:false, type:'metropolis', desc:'最終局面。あらゆる勢力がUFOを阻止しようとする。', bgCol:'#202050'},
+];
+let curStageIdx=0;
+let unlockedIdx=localStorage.getItem('ufo_unlocked')?parseInt(localStorage.getItem('ufo_unlocked')):0;
+let stageCaptures=0;
+
 // ─── Helpers ─────────────────────────────────────────────────────
 const rnd=(a,b)=>a+(b-a)*Math.random();
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 const lerp=(a,b,t)=>a+(b-a)*t;
+
+function hexToHSL(hex, lumOffset) {
+  if(!hex) return null;
+  let r = parseInt(hex.slice(1,3), 16) / 255;
+  let g = parseInt(hex.slice(3,5), 16) / 255;
+  let b = parseInt(hex.slice(5,7), 16) / 255;
+  let max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+  if(max == min) h = s = 0;
+  else {
+    let d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch(max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return `hsl(${h*360}, ${s*100}%, ${clamp(l*100 + lumOffset, 0, 100)}%)`;
+}
 
 function initStars(){
   stars=[];
@@ -739,9 +791,11 @@ function drawBackground(){
   ctx.fillStyle=sky; ctx.fillRect(0,0,W,H);
 
   // Ground
+  let st = STAGES[curStageIdx];
   let gnd=ctx.createLinearGradient(0,HORIZON,0,H);
-  gnd.addColorStop(0,'#c07040'); gnd.addColorStop(.3,'#a05520');
-  gnd.addColorStop(1,'#7a3815');
+  gnd.addColorStop(0, st.bgCol || '#c07040');
+  gnd.addColorStop(.3, hexToHSL(st.bgCol, -10) || '#a05520');
+  gnd.addColorStop(1, hexToHSL(st.bgCol, -25) || '#7a3815');
   ctx.fillStyle=gnd; ctx.fillRect(0,HORIZON,W,H-HORIZON);
 
   // Moon
@@ -1029,7 +1083,24 @@ function addFM(txt,x,y,col,sz=20){ floatMsgs.push({txt,x,y,vy:-1.4,col,sz,life:1
 
 // ─── Spawn ───────────────────────────────────────────────────────
 function spawnObject(){
-  let tp=OBJ_TYPES[Math.floor(Math.random()*OBJ_TYPES.length)];
+  let st = STAGES[curStageIdx];
+  let pool = [];
+  OBJ_TYPES.forEach(tp => {
+    let weight = 10;
+    if(st.type === 'rural') {
+      if(['cow','sheep','chicken','pig'].includes(tp.type)) weight = 40;
+      if(['car','truck'].includes(tp.type)) weight = 2;
+    } else if(st.type === 'town') {
+      if(['human','car','dog'].includes(tp.type)) weight = 30;
+    } else if(st.type === 'suburbs') {
+      if(['truck','car','dog','human'].includes(tp.type)) weight = 30;
+    } else if(st.type === 'capital' || st.type === 'metropolis') {
+       weight = 20;
+    }
+    for(let i=0; i<weight; i++) pool.push(tp);
+  });
+  
+  let tp = pool[Math.floor(Math.random()*pool.length)];
   let fl=Math.random()<.5;
   let vArr=VARIANTS[tp.type]||[];
   let vIdx=vArr.length?pickVariantIdx(vArr):0;
@@ -1147,14 +1218,29 @@ function updateAscending(dt){
     obj.ascX=lerp(obj.ascX,ufo.x,.06);
     if(obj.ascY<=ufo.y+12){
       obj.ascending=false; obj.captured=true;
-      captures++; score+=obj.score;
+      captures++; stageCaptures++; score+=obj.score;
       spawnCaptureEffect(ufo.x,ufo.y);
       addFM('+'+obj.score+'pt!',ufo.x,ufo.y-50,'#7ff0ff',22);
       addToCollection(obj);
       updateHUD();
+      checkStageClear();
     }
   }
   objects=objects.filter(o=>!o.captured||o.ascending);
+}
+
+function checkStageClear(){
+  let st = STAGES[curStageIdx];
+  if(stageCaptures >= st.goal){
+    state = 'cleared';
+    let sc = document.getElementById('scov');
+    sc.style.display='flex';
+    document.getElementById('sc-stats').innerHTML=`捕獲数: ${stageCaptures} / ${st.goal}<br>獲得スコア: ${score} pt`;
+    if(curStageIdx === unlockedIdx && unlockedIdx < STAGES.length-1){
+      unlockedIdx++;
+      localStorage.setItem('ufo_unlocked', unlockedIdx);
+    }
+  }
 }
 
 function findBeamTarget(){
@@ -1285,9 +1371,114 @@ function doGameOver(){
     <div class="sub">UFOが撃墜されました...<br>
     最終スコア: <span style="color:#7ff0ff;font-size:26px;font-weight:900">${score.toLocaleString()}</span> pt<br>
     捕獲数: <span style="color:#ffdd55">${captures}</span> 体</div>
-    <button class="btn" id="rb">🔄 もう一度</button>`;
-  document.getElementById('rb').onclick=startGame;
+    <div style="display:flex;gap:10px">
+      <button class="btn" id="rb">🔄 再挑戦</button>
+      <button class="btn" id="mb">🌍 マップへ</button>
+    </div>`;
+  document.getElementById('rb').onclick=()=>startLevel(curStageIdx);
+  document.getElementById('mb').onclick=openMap;
 }
+
+// ─── Map System Logic ─────────────────────────────────────────────
+const mc = document.getElementById('mc');
+const mctx = mc.getContext('2d');
+let selectedNodeIdx = -1;
+
+function openMap(){
+  state='map';
+  document.getElementById('mov').style.display='flex';
+  document.getElementById('ov').style.display='none';
+  document.getElementById('scov').style.display='none';
+  drawMap();
+}
+
+function drawMap(){
+  mctx.clearRect(0,0,800,500);
+  // US Map Shape (Simplified)
+  mctx.fillStyle='rgba(60,200,255,0.08)';
+  mctx.beginPath();
+  mctx.moveTo(100,100); mctx.lineTo(700,100); mctx.lineTo(750,400); mctx.lineTo(150,450); mctx.closePath();
+  mctx.fill();
+  mctx.strokeStyle='rgba(100,220,255,0.3)'; mctx.lineWidth=2; mctx.stroke();
+
+  // Draw Paths
+  mctx.setLineDash([5,5]);
+  mctx.strokeStyle='rgba(100,220,255,0.2)';
+  for(let i=0; i<STAGES.length-1; i++){
+    mctx.beginPath();
+    mctx.moveTo(STAGES[i].x, STAGES[i].y);
+    mctx.lineTo(STAGES[i+1].x, STAGES[i+1].y);
+    mctx.stroke();
+  }
+  mctx.setLineDash([]);
+
+  // Draw Nodes
+  STAGES.forEach((s,i)=>{
+    let locked = i > unlockedIdx;
+    let selected = i === selectedNodeIdx;
+    mctx.save();
+    mctx.translate(s.x, s.y);
+    
+    // Glow
+    if(!locked){
+      let g = mctx.createRadialGradient(0,0,0,0,0,25);
+      g.addColorStop(0,'rgba(0,255,255,0.4)'); g.addColorStop(1,'rgba(0,255,255,0)');
+      mctx.fillStyle=g; mctx.beginPath(); mctx.arc(0,0,25,0,Math.PI*2); mctx.fill();
+    }
+
+    mctx.fillStyle = locked ? '#444' : (selected ? '#fff' : '#00ddff');
+    mctx.beginPath(); mctx.arc(0,0,selected?12:8,0,Math.PI*2); mctx.fill();
+    mctx.strokeStyle = '#08071a'; mctx.lineWidth=2; mctx.stroke();
+
+    // Label
+    mctx.fillStyle = '#fff';
+    mctx.font = '12px Segoe UI';
+    mctx.textAlign='center';
+    mctx.fillText(locked?'???':s.name, 0, 25);
+    
+    if(i <= unlockedIdx && i !== unlockedIdx) {
+       mctx.fillStyle='#ffff00'; mctx.fillText('⭐', 0, -15);
+    }
+    mctx.restore();
+  });
+}
+
+mc.onclick = (e) => {
+  let r = mc.getBoundingClientRect();
+  let x = e.clientX - r.left, y = e.clientY - r.top;
+  STAGES.forEach((s,i)=>{
+    if(dist({x,y}, s) < 20 && i <= unlockedIdx){
+      selectedNodeIdx = i;
+      document.getElementById('m-st-name').textContent = s.name;
+      document.getElementById('m-st-goal').textContent = `目標: ${s.goal} 捕獲 | ${s.desc}`;
+      document.getElementById('m-st-btn').style.display = 'inline-block';
+      drawMap();
+    }
+  });
+};
+
+document.getElementById('m-st-btn').onclick = () => {
+  if(selectedNodeIdx !== -1) startLevel(selectedNodeIdx);
+};
+
+function startLevel(idx){
+  curStageIdx = idx;
+  state='playing';
+  stageCaptures=0; score=0; captures=0; ufoHP=UFO_MAX_HP; alertLv=0;
+  alertDecay=0; spawnTmr=0; policeTmr=0; militaryOn=false;
+  ufo={x:W/2,y:H*.25,vx:0,vy:0,ft:0};
+  objects=[]; police=[]; military=[]; particles=[]; floatMsgs=[];
+  beamOn=false; beamTarget=null; abductProg=0;
+  document.getElementById('mov').style.display='none';
+  document.getElementById('ov').style.display='none';
+  document.getElementById('scov').style.display='none';
+  updateHUD();
+  for(let i=0;i<9;i++) spawnObject();
+}
+
+document.getElementById('sc-btn').onclick = () => {
+  openMap();
+};
 
 // ─── Beam range indicator ────────────────────────────────────────
 function drawBeamRangeIndicator(){
@@ -1367,6 +1558,11 @@ canvas.addEventListener('mousemove',e=>{
   let r=canvas.getBoundingClientRect();
   mx=e.clientX-r.left; my=e.clientY-r.top;
 });
+canvas.addEventListener('touchmove',e=>{
+  let r=canvas.getBoundingClientRect();
+  mx=e.touches[0].clientX-r.left; my=e.touches[0].clientY-r.top;
+  e.preventDefault();
+},{passive:false});
 
 function toggleBeam(){
   if(state!=='playing') return;
@@ -1380,6 +1576,7 @@ function toggleBeam(){
 }
 
 canvas.addEventListener('mousedown',e=>{ if(e.button===0) toggleBeam(); });
+canvas.addEventListener('touchstart',e=>{ toggleBeam(); e.preventDefault(); },{passive:false});
 canvas.addEventListener('mouseup',e=>{}); // beam stays until toggled off or missed
 
 document.addEventListener('keydown',e=>{
@@ -1404,7 +1601,7 @@ document.getElementById('upbtn').onclick=()=>{
   if(upOpen){ renderUpgrades(); p.style.display='block'; } else p.style.display='none';
 };
 document.getElementById('clo').onclick=()=>{ upOpen=false; document.getElementById('upanel').style.display='none'; };
-document.getElementById('stbtn').onclick=startGame;
+document.getElementById('stbtn').onclick=openMap;
 document.getElementById('zbtn').onclick=()=>toggleZukan();
 document.getElementById('zclo').onclick=()=>closeZukan();
 document.getElementById('cdcard-close').onclick=()=>{ document.getElementById('cdov').style.display='none'; };
