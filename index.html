@@ -1469,8 +1469,6 @@ setTimeout(function(){
   } catch(e) { console.error("Title UFO Anim Error:", e); }
 }, 100);
 
-window.addEventListener('DOMContentLoaded', () => {
-
 // ─── Init & UI Listeners ──────────────────────────────────────────
 try {
   totalVariants = Object.values(VARIANTS).reduce((a, v) => a + v.length, 0);
@@ -1495,7 +1493,6 @@ try {
   init3D();
 } catch (e) { console.error("init3D Error:", e); }
 animate();
-});
 </script>
 </body>
 </html>
