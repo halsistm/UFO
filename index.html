@@ -112,6 +112,12 @@
             transform: translate(-50%, -50%);
             box-shadow: 0 0 12px #00ff8866; pointer-events: none;
         }
+        #speed-indicator {
+            position: absolute; top: 20px; right: 20px;
+            color: #ff8800; font-size: 11px; letter-spacing: 2px;
+            text-shadow: 0 0 8px #ff8800;
+            opacity: 0; transition: opacity 0.2s;
+        }
     </style>
 </head>
 <body>
@@ -126,6 +132,7 @@
         UFO HP
         <div id="hp-bar-bg"><div id="hp-fill" style="width:100%"></div></div>
     </div>
+    <div id="speed-indicator">⚡ WARP SPEED</div>
     <div id="controls">
         <div class="btn" id="abduct-btn">ABDUCT</div>
         <div id="attack-btn">ATTACK</div>
@@ -216,7 +223,6 @@ document.body.appendChild(renderer.domElement);
 const camera = new THREE.PerspectiveCamera(55,window.innerWidth/window.innerHeight,0.1,800);
 camera.position.set(0,40,55);
 
-// ⚡ OPTIMIZATION: Boost ambient slightly to compensate for removed color PointLights
 const ambient = new THREE.AmbientLight(0x223355, 0.85);
 scene.add(ambient);
 const moonLight = new THREE.DirectionalLight(0x6677aa,0.4);
@@ -246,7 +252,6 @@ function getMat(color,roughness=0.9,metalness=0.0){
     return matCache.get(key);
 }
 
-// Shared geometry / dummy objects
 const _sharedBlockGeo = new THREE.BoxGeometry(BLOCK_SIZE,BLOCK_SIZE,BLOCK_SIZE);
 const _sharedWaterGeo = new THREE.PlaneGeometry(BLOCK_SIZE,BLOCK_SIZE);
 const _sharedWaterMat = new THREE.MeshStandardMaterial({color:0x0e2e55,transparent:true,opacity:0.8,roughness:0.05,metalness:0.4});
@@ -265,10 +270,6 @@ const _apacheBaseColor = new THREE.Color(0x000000);
 function getChunkKey(cx,cz){return `${cx},${cz}`;}
 function worldToChunk(wx,wz){return{cx:Math.floor(wx/CHUNK_SIZE),cz:Math.floor(wz/CHUNK_SIZE)};}
 
-// ======================================================
-// ⚡ OPTIMIZATION 1: CANVAS TEXTURE FOR BUILDING WINDOWS
-// Replaces 50+ PlaneGeometry meshes per building with a single texture
-// ======================================================
 const _buildingTexCache = new Map();
 
 function makeBuildingTexture(rows, cols, seed) {
@@ -280,14 +281,12 @@ function makeBuildingTexture(rows, cols, seed) {
     canvas.width = TW; canvas.height = TH;
     const ctx = canvas.getContext('2d');
 
-    // Dark facade base
     ctx.fillStyle = '#0a0a14';
     ctx.fillRect(0, 0, TW, TH);
 
     const winColors = ['#ffee88','#fff0aa','#88ccff','#ffdd66','#ff9944','#ffffff'];
     const cw = TW / cols, ch = TH / rows;
 
-    // Seeded RNG so texture is deterministic per building
     let r = seed | 0;
     const rng = () => { r = (r * 9301 + 49297) % 233280; return r / 233280; };
 
@@ -305,7 +304,6 @@ function makeBuildingTexture(rows, cols, seed) {
     return tex;
 }
 
-// Road materials
 const roadMat = new THREE.MeshStandardMaterial({color:0x111115,roughness:0.95});
 const sidewalkMat = new THREE.MeshStandardMaterial({color:0x1a1a20,roughness:0.9});
 const laneMarkMat = new THREE.MeshBasicMaterial({color:0x555540});
@@ -398,8 +396,6 @@ function buildChunk(cx,cz){
 
     spawnBiomeObjects(group,cx,cz);
 
-    // ⚡ OPTIMIZATION 2: Removed per-chunk PointLights (previously 1 per urban/suburb chunk).
-    // Instead use a cheap emissive disc on the ground plane to fake city glow.
     if(centerBiome===BIOME.URBAN||centerBiome===BIOME.SUBURB){
         const glowPlane=new THREE.Mesh(
             new THREE.PlaneGeometry(CHUNK_SIZE*0.6,CHUNK_SIZE*0.6),
@@ -431,6 +427,29 @@ function buildChunk(cx,cz){
 function spawnBiomeObjects(group,cx,cz){
     const rng=createRNG(cx*100+cz);
     const biome=getBiome(cx*CHUNK_SIZE+CHUNK_SIZE/2,cz*CHUNK_SIZE+CHUNK_SIZE/2);
+
+    // ⚡ FAST MODE: ビルのみ生成、他は全スキップ
+    if(isFastMode){
+        if(biome===BIOME.URBAN){
+            const count=3+Math.floor(rng()*3);
+            for(let i=0;i<count;i++){
+                const lx=rng()*(CHUNK_SIZE-8)+4,lz=rng()*(CHUNK_SIZE-8)+4;
+                const h=20+rng()*60,w=8+rng()*14,d=8+rng()*14;
+                const colors=[0x1e2535,0x252535,0x181828,0x222230,0x1a2220];
+                const bldg=makeBuilding(w,d,h,colors[Math.floor(rng()*colors.length)]);
+                bldg.position.set(lx,0,lz);group.add(bldg);
+            }
+        }else if(biome===BIOME.SUBURB){
+            const count=2+Math.floor(rng()*3);
+            for(let i=0;i<count;i++){
+                const lx=rng()*(CHUNK_SIZE-8)+4,lz=rng()*(CHUNK_SIZE-8)+4;
+                const house=makeHouse(rng);
+                house.position.set(lx,0,lz);house.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(house);
+            }
+        }
+        return;
+    }
+
     const spawnCount={
         [BIOME.FOREST]:10,[BIOME.GRASSLAND]:5,[BIOME.FARMLAND]:4,[BIOME.MOUNTAIN]:4,
         [BIOME.SUBURB]:6,[BIOME.URBAN]:7,[BIOME.INDUSTRIAL]:5,[BIOME.BEACH]:2,
@@ -538,28 +557,19 @@ function makePalmTree(){
     return g;
 }
 
-// ======================================================
-// ⚡ OPTIMIZATION 1 (continued): makeBuilding uses Canvas Texture
-// BEFORE: rows*cols individual PlaneGeometry window meshes (up to 50+ per building)
-// AFTER: 1 canvas texture on the building body = 0 extra meshes
-// ======================================================
 function makeBuilding(w,d,h,color){
     const g=new THREE.Group();
     const rows=Math.max(2,Math.floor(h/4));
     const cols=Math.max(2,Math.floor(w/3));
     const seed=Math.floor(w*31+h*17+d*7);
 
-    // Window texture (one canvas, baked, reused via cache)
     const winTex=makeBuildingTexture(rows,cols,seed);
 
-    // MeshLambertMaterial: no specular → cheaper than Standard
     const bodyMtl=new THREE.MeshLambertMaterial({
         color,
         emissive:new THREE.Color(color).multiplyScalar(0.4),
     });
 
-    // Front/back face material with window texture as emissive map
-    // emissiveMap makes windows glow without needing PointLights
     const faceMtl=new THREE.MeshLambertMaterial({
         color,
         emissive:new THREE.Color(0xffffff),
@@ -567,14 +577,12 @@ function makeBuilding(w,d,h,color){
         emissiveMap:winTex,
     });
 
-    // BoxGeometry face order: +X,-X,+Y,-Y,+Z,-Z
     const materials=[bodyMtl,bodyMtl,bodyMtl,bodyMtl,faceMtl,faceMtl];
     const body=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),materials);
     body.position.y=h/2;
     body.castShadow=false; body.receiveShadow=false;
     g.add(body);
 
-    // Neon sign bar (MeshBasicMaterial: zero lighting cost)
     const neonColors=[0xff2266,0x00ffcc,0xff8800,0x44aaff,0xff44ff,0x00ff88];
     const nc=neonColors[Math.floor(Math.random()*neonColors.length)];
     const neonBar=new THREE.Mesh(
@@ -704,11 +712,6 @@ const groundRingMat=new THREE.MeshBasicMaterial({color:0x00ff88,transparent:true
 const groundRing=new THREE.Mesh(new THREE.RingGeometry(5.5,7.5,36),groundRingMat);
 groundRing.rotation.x=-Math.PI/2; groundRing.position.y=0.22; scene.add(groundRing);
 
-// ======================================================
-// ⚡ OPTIMIZATION 2: UFO LIGHTING — reduced from 5 to 2 PointLights
-// Removed: ufoColorLight1, ufoColorLight2 (saved 2 PointLights)
-// The LED ring on the UFO provides color visually without needing lights
-// ======================================================
 const spotLight=new THREE.SpotLight(0x88ffcc,2.0,250,Math.PI/6,0.4,0);
 scene.add(spotLight); spotLight.castShadow=false;
 const lightTarget=new THREE.Object3D(); scene.add(lightTarget);
@@ -861,7 +864,7 @@ function spawnApache(){
 }
 
 // ======================================================
-// EXPLOSION SYSTEM — pool-based, no setInterval
+// EXPLOSION SYSTEM
 // ======================================================
 const DEBRIS_COUNT=220,PUFF_COUNT=80,RING_COUNT=12,FLASH_COUNT=8;
 const _debrisPool=[],_debrisActive=[],_puffPool=[],_puffActive=[],_ringPool=[],_ringActive=[],_flashPool=[],_flashActive=[];
@@ -937,6 +940,7 @@ function updateExplosions(dt){
 // ======================================================
 const targets=[];
 let score=0,abductCount=0;
+let isFastMode=false; // ⚡ 光速モードフラグ
 const collected=[];
 const clock=new THREE.Clock();
 const keys={};
@@ -1116,13 +1120,16 @@ function updateChunks(){
             buildChunk(cx,cz);activeChunks.add(key);
             if(!chunkTargetCount.has(key)){
                 chunkTargetCount.set(key,0);
-                const biome=getBiome(cx*CHUNK_SIZE+CHUNK_SIZE/2,cz*CHUNK_SIZE+CHUNK_SIZE/2);
-                if(biome===BIOME.OCEAN||biome===BIOME.RIVER)return;
-                const spawnN=4+Math.floor(Math.random()*4);
-                for(let i=0;i<spawnN;i++){
-                    const wx=cx*CHUNK_SIZE+Math.random()*CHUNK_SIZE;
-                    const wz=cz*CHUNK_SIZE+Math.random()*CHUNK_SIZE;
-                    addTarget(wx,wz);
+                // ⚡ 光速モード中はターゲットを生成しない
+                if(!isFastMode){
+                    const biome=getBiome(cx*CHUNK_SIZE+CHUNK_SIZE/2,cz*CHUNK_SIZE+CHUNK_SIZE/2);
+                    if(biome===BIOME.OCEAN||biome===BIOME.RIVER)return;
+                    const spawnN=4+Math.floor(Math.random()*4);
+                    for(let i=0;i<spawnN;i++){
+                        const wx=cx*CHUNK_SIZE+Math.random()*CHUNK_SIZE;
+                        const wz=cz*CHUNK_SIZE+Math.random()*CHUNK_SIZE;
+                        addTarget(wx,wz);
+                    }
                 }
             }
         }
@@ -1158,6 +1165,7 @@ function showNotif(text){
 const biomeLabel=document.getElementById('biome-label');
 let lastBiomeLabel='';
 const hpFill=document.getElementById('hp-fill');
+const speedIndicator=document.getElementById('speed-indicator');
 
 // ======================================================
 // INPUT
@@ -1195,13 +1203,8 @@ attackBtn.addEventListener('pointerdown',()=>{fireAttackBeam();});
 attackBtn.addEventListener('touchstart',e=>{e.preventDefault();fireAttackBeam();},{passive:false});
 
 // ======================================================
-// ANIMATE
+// SPEED TRAIL SYSTEM (既存)
 // ======================================================
-const camTarget=new THREE.Vector3(0,40,55);
-const camLookTarget=new THREE.Vector3(0,30,0);
-let chunkUpdateTimer=0,camShakeTimer=0,moveStreak=0,currentSpeed=2.8;
-
-// Speed trail
 const TRAIL_COUNT=30;
 const trailPool=[];
 for(let i=0;i<TRAIL_COUNT;i++){
@@ -1211,6 +1214,33 @@ for(let i=0;i<TRAIL_COUNT;i++){
 let trailHead=0,trailEmitTimer=0;
 const prevUfoPos=new THREE.Vector3(),ufoMoveDir=new THREE.Vector3(0,0,-1);
 const _streakQuat=new THREE.Quaternion(),_zAxis=new THREE.Vector3(0,0,1);
+
+// ======================================================
+// ⚡ LED光跡システム — 12個のLED（偶数番号）が世界座標で残像を引く
+// ======================================================
+const LED_TRAIL_COUNT = 12;          // 使用するLED数（0,2,4...22番）
+const LED_TRAIL_POOL_SIZE = LED_TRAIL_COUNT * 20; // プールサイズ
+const _ledTrailPool = [];
+const _ledTrailActive = [];
+const _ledWorldPos = new THREE.Vector3();
+// LED残像用の球体（小さめ、depthWrite:false）
+const _ledTrailGeo = new THREE.SphereGeometry(0.30, 5, 4);
+for(let i=0;i<LED_TRAIL_POOL_SIZE;i++){
+    const m=new THREE.Mesh(
+        _ledTrailGeo,
+        new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0,depthWrite:false})
+    );
+    m.visible=false;
+    scene.add(m);
+    _ledTrailPool.push(m);
+}
+
+// ======================================================
+// ANIMATE
+// ======================================================
+const camTarget=new THREE.Vector3(0,40,55);
+const camLookTarget=new THREE.Vector3(0,30,0);
+let chunkUpdateTimer=0,camShakeTimer=0,moveStreak=0,currentSpeed=2.8;
 
 function animate(){
     requestAnimationFrame(animate);
@@ -1224,6 +1254,11 @@ function animate(){
     const boostFactor=boostT*boostT;
     currentSpeed=2.8+boostFactor*18;
 
+    // ⚡ 光速モード判定（boostFactor > 0.7 で発動）
+    isFastMode=boostFactor>0.7;
+    // 速度インジケーター更新
+    speedIndicator.style.opacity=boostFactor>0.5?Math.min((boostFactor-0.5)*4,1).toFixed(2):'0';
+
     prevUfoPos.copy(ufo.position);
     if(keys['KeyW']||keys['ArrowUp'])ufo.position.z-=currentSpeed;
     if(keys['KeyS']||keys['ArrowDown'])ufo.position.z+=currentSpeed;
@@ -1233,7 +1268,7 @@ function animate(){
     if(isMoving){const mv=new THREE.Vector3().subVectors(ufo.position,prevUfoPos);mv.y=0;if(mv.length()>0.01)ufoMoveDir.copy(mv).normalize();}
     prevUfoPos.copy(ufo.position);
 
-    // Trail
+    // --- 既存スピードトレイル ---
     const trailIntensity=boostFactor;
     if(trailIntensity>0.05&&isMoving){
         trailEmitTimer-=delta;
@@ -1257,6 +1292,54 @@ function animate(){
         }
     });
 
+    // ======================================================
+    // ⚡ LED光跡 — 毎フレームLEDの世界座標に残像を生成
+    // boostFactor > 0.05 から徐々に出現、光速になるほど長く太くなる
+    // ======================================================
+    if(boostFactor>0.05&&isMoving){
+        for(let li=0;li<LED_TRAIL_COUNT;li++){
+            const ledIdx=li*2; // 0,2,4,6...22番LEDを使用
+            const led=ledRing.children[ledIdx];
+            led.getWorldPosition(_ledWorldPos);
+
+            // プールから空きメッシュを取得
+            let p=null;
+            for(let pi=0;pi<_ledTrailPool.length;pi++){
+                if(!_ledTrailPool[pi].visible){p=_ledTrailPool[pi];break;}
+            }
+            if(!p)continue;
+
+            // LEDの現在の色相に合わせる
+            const hue=((ledIdx/24)+time*0.4)%1;
+            p.position.copy(_ledWorldPos);
+            p.material.color.setHSL(hue,1.0,0.88);
+            // 初期不透明度と大きさ：光速に比例して太く
+            const initOpacity=Math.min(boostFactor*1.4,0.95);
+            const initScale=0.5+boostFactor*1.8;
+            p.material.opacity=initOpacity;
+            p.scale.setScalar(initScale);
+            p.visible=true;
+
+            const maxAge=0.06+boostFactor*0.28;
+            _ledTrailActive.push({m:p,age:0,maxAge,initOpacity,initScale});
+        }
+    }
+    // LED残像の更新（フェードアウト）
+    for(let i=_ledTrailActive.length-1;i>=0;i--){
+        const t=_ledTrailActive[i];
+        t.age+=delta;
+        if(t.age>=t.maxAge){
+            t.m.visible=false;
+            t.m.material.opacity=0;
+            _ledTrailActive.splice(i,1);
+            continue;
+        }
+        const prog=t.age/t.maxAge;
+        // 2乗でシャープにフェード
+        t.m.material.opacity=t.initOpacity*(1-prog*prog);
+        t.m.scale.setScalar(t.initScale*(1-prog*0.55));
+    }
+
     ufo.position.y=55+Math.sin(time*0.8)*1.2;
     ufo.rotation.y=time*0.3;
     antennaTop.material.color.setHSL(0,1,0.5+0.5*Math.sin(time*5));
@@ -1266,8 +1349,6 @@ function animate(){
     ufoPointLight.position.copy(ufo.position);
     ufoGroundLight.position.copy(ufo.position);
 
-    // ⚡ OPTIMIZATION 2: ufoColorLight1/2 removed — LED ring provides visual color without extra lights.
-    // Ring emissive color animates to match what the lights would have done.
     ufoRing.material.emissiveIntensity=1.2+Math.sin(time*3)*0.5+boostFactor*1.5;
     if(boostFactor>0.05){ufoRing.material.emissive.setHSL(0.45-boostFactor*0.35,1.0,0.55);}
     else{ufoRing.material.emissive.setHSL((time*0.15)%1,1.0,0.5);}
@@ -1349,22 +1430,31 @@ function animate(){
         if(ap.hp<=0){createExplosion(ap.mesh.position.clone(),1.8);scene.remove(ap.mesh);apaches.splice(i,1);}
     }
 
+    // ======================================================
+    // ターゲット更新 — ⚡ 光速モード中はAIをスキップ、吸い込みのみ処理
+    // ======================================================
     for(let i=targets.length-1;i>=0;i--){
         const t=targets[i];
         const dx=t.mesh.position.x-ufo.position.x,dz=t.mesh.position.z-ufo.position.z;
         const dist=Math.sqrt(dx*dx+dz*dz);
-        if(t.mesh.position.y<=0.1){
-            if(dist<t.fleeDist&&abductActive){
-                const angle=Math.atan2(dx,dz);
-                t.mesh.position.x+=Math.sin(angle)*t.speed*1.5;t.mesh.position.z+=Math.cos(angle)*t.speed*1.5;
-                if(t.type==='human'||t.type==='car'||t.type==='truck'||t.type==='bus')t.mesh.rotation.y=Math.atan2(dx,dz);
-            }else{
-                if(Math.random()<0.008)t.wanderDir=Math.random()*Math.PI*2;
-                t.mesh.position.x+=Math.sin(t.wanderDir)*t.speed*0.25;t.mesh.position.z+=Math.cos(t.wanderDir)*t.speed*0.25;
-                if(t.type==='human'||t.type==='deer'||t.type==='wolf'||t.type==='horse')t.mesh.rotation.y=t.wanderDir;
-                if(t.type==='human'){t.mesh.children.forEach((c,ci)=>{if(ci<2)c.rotation.x=Math.sin(time*4+t.animPhase+ci)*0.2;});}
+
+        // ⚡ 光速モード中はAI（逃走・徘徊・アニメーション）をスキップ
+        if(!isFastMode){
+            if(t.mesh.position.y<=0.1){
+                if(dist<t.fleeDist&&abductActive){
+                    const angle=Math.atan2(dx,dz);
+                    t.mesh.position.x+=Math.sin(angle)*t.speed*1.5;t.mesh.position.z+=Math.cos(angle)*t.speed*1.5;
+                    if(t.type==='human'||t.type==='car'||t.type==='truck'||t.type==='bus')t.mesh.rotation.y=Math.atan2(dx,dz);
+                }else{
+                    if(Math.random()<0.008)t.wanderDir=Math.random()*Math.PI*2;
+                    t.mesh.position.x+=Math.sin(t.wanderDir)*t.speed*0.25;t.mesh.position.z+=Math.cos(t.wanderDir)*t.speed*0.25;
+                    if(t.type==='human'||t.type==='deer'||t.type==='wolf'||t.type==='horse')t.mesh.rotation.y=t.wanderDir;
+                    if(t.type==='human'){t.mesh.children.forEach((c,ci)=>{if(ci<2)c.rotation.x=Math.sin(time*4+t.animPhase+ci)*0.2;});}
+                }
             }
         }
+
+        // 吸い込み処理は光速モードでも常に動作
         if(abductActive&&dist<6){
             t.vy+=3.5/t.weight;if(t.vy>0.6)t.vy=0.6;
             t.mesh.position.y+=t.vy;t.mesh.rotation.y+=0.06;t.mesh.rotation.x+=0.02;
@@ -1404,8 +1494,9 @@ function animate(){
         }
     }
 
+    // ⚡ 光速モード中はチャンク更新頻度を1/3に削減
     chunkUpdateTimer++;
-    if(chunkUpdateTimer>=30){chunkUpdateTimer=0;updateChunks();}
+    if(chunkUpdateTimer>=(isFastMode?90:30)){chunkUpdateTimer=0;updateChunks();}
 
     const curBiome=getBiome(ufo.position.x,ufo.position.z);
     const bn=BIOME_NAMES[curBiome]||'WILDERNESS';
