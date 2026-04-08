@@ -142,7 +142,7 @@
   <div id="ov">
     <canvas id="titleUFO" width="160" height="100" style="margin-bottom:10px"></canvas>
     <h1>UFO ABDUCTION</h1>
-    <div class="sub">宇宙船を操ってキャトルミューティレーション！<br>マウス移動でUFO誘導、クリック / Space でビーム発射<br>UFO直下にいる目標をビームで吸い上げろ！</div>
+    <div class="sub" style="word-break:keep-all">宇宙船を操ってキャトルミューティレーション！ マウス移動でUFO誘導、クリック / Space でビーム発射。<br>UFO直下にいる目標をビームで吸い上げろ！</div>
     <button class="btn" id="stbtn">🎮 ゲーム開始</button>
   </div>
   <div id="ctrl">WASD: 飛行移動 &nbsp;|&nbsp; マウス: 視点操作 &nbsp;|&nbsp; Space: ビーム &nbsp;|&nbsp; U: 強化 &nbsp;|&nbsp; Z: 図鑑</div>
@@ -258,7 +258,7 @@ function drawHuman(cx, cy, dir, alert, shake){
   ctx.strokeStyle='#000'; ctx.lineWidth=2;
   ctx.beginPath();
   ctx.moveTo(-9,-12); ctx.lineTo(-9,-28); ctx.lineTo(9,-28); ctx.lineTo(9,-12);
-  ctx.lineTo(4,-12); ctx.lineTo(4,-22); ctx.lineTo(0,-22); ctx.lineTo(0,-22);
+  ctx.lineTo(4,-12); ctx.lineTo(4,-22); ctx.lineTo(0,-22);
   ctx.lineTo(-4,-22); ctx.lineTo(-4,-12); ctx.closePath();
   ctx.fill(); ctx.stroke();
 
@@ -611,7 +611,9 @@ function drawTruck(cx, cy, dir, shake){
     ctx.fillStyle='#555'; ctx.lineWidth=1;
     for(let a=0;a<5;a++){
       let ang=a/5*Math.PI*2;
-      ctx.beginPath(); ctx.arc(wx+Math.cos(ang)*3.5,Math.sin(ang)*3.5,1.2,0,Math.PI*2); ctx.fill();
+      let lugX = wx + Math.cos(ang)*3.5;
+      let lugY = Math.sin(ang)*3.5;
+      ctx.beginPath(); ctx.arc(lugX, lugY, 1.2, 0, Math.PI*2); ctx.fill();
     }
   });
 
