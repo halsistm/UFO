@@ -77,7 +77,15 @@
   @keyframes ncAnim{0%{opacity:0;transform:translateY(10px)}15%{opacity:1;transform:translateY(0)}70%{opacity:1}100%{opacity:0;transform:translateY(-8px)}}
   .nc-new{font-size:9px;font-weight:900;letter-spacing:2px;color:#ffaa44;text-transform:uppercase}
   .nc-name{font-size:15px;font-weight:800;margin-top:2px}
+  /* ── 3D Pip Window ── */
+  #pip-cont{position:absolute;bottom:20px;right:20px;width:180px;height:120px;background:#000;border:2px solid rgba(100,200,255,0.4);border-radius:10px;overflow:hidden;box-shadow:0 0 20px rgba(0,0,0,0.8);display:none;pointer-events:none}
+  #pip-ch{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;pointer-events:none}
+  #pip-ch::before, #pip-ch::after{content:'';position:absolute;background:rgba(0,255,100,0.6)}
+  #pip-ch::before{top:0;left:19px;width:2px;height:40px}
+  #pip-ch::after{top:19px;left:0;width:40px;height:2px}
+  #pip-label{position:absolute;top:5px;left:8px;font-size:8px;color:#0f0;font-family:monospace;text-transform:uppercase;letter-spacing:1px;text-shadow:0 0 4px #0f0}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 <div id="gc">
@@ -137,7 +145,13 @@
     <div class="sub">宇宙船を操ってキャトルミューティレーション！<br>マウス移動でUFO誘導、クリック / Space でビーム発射<br>UFO直下にいる目標をビームで吸い上げろ！</div>
     <button class="btn" id="stbtn">🎮 ゲーム開始</button>
   </div>
-  <div id="ctrl">マウス: UFO移動 &nbsp;|&nbsp; クリック / Space: ビーム &nbsp;|&nbsp; U: 強化パネル &nbsp;|&nbsp; Z: 図鑑</div>
+  <div id="ctrl">WASD: 飛行移動 &nbsp;|&nbsp; マウス: 視点操作 &nbsp;|&nbsp; Space: ビーム &nbsp;|&nbsp; U: 強化 &nbsp;|&nbsp; Z: 図鑑</div>
+  <!-- 3D Pip -->
+  <div id="pip-cont">
+    <div id="pip-label">DOWNWARD CAM</div>
+    <div id="pip-ch"></div>
+  </div>
+</div>
   <!-- 大マップ -->
   <div id="mov" style="position:absolute;inset:0;background:rgba(4,8,28,0.98);z-index:300;display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
     <h2 style="color:#7ff0ff;margin-bottom:15px;text-shadow:0 0 10px #00eeff;font-size:min(20px, 4vw)">🌎 アメリカ大陸横断マップ</h2>
@@ -160,21 +174,15 @@
 </div>
 
 <script>
-// ─── Canvas Setup ───────────────────────────────────────────────
+// ─── Setup ──────────────────────────────────────────────────────
 const canvas = document.getElementById('c');
-const ctx    = canvas.getContext('2d');
-const W = Math.min(window.innerWidth-20, 1100);
-const H = Math.min(window.innerHeight-20, 680);
+const ctx = canvas.getContext('2d');
+const W = window.innerWidth, H = window.innerHeight;
 canvas.width = W; canvas.height = H;
-document.getElementById('gc').style.width = W+'px';
+document.getElementById('gc').style.width = W + 'px';
 
-const GROUND_Y = H * 0.74;
-const HORIZON  = H * 0.56;
-const BEAM_HW  = 34;   // beam half-width
-const UFO_MAX_HP = 100;
-const ALERT_MAX  = 100;
-
-// ─── Upgrades ───────────────────────────────────────────────────
+// ─── Game Constants ──────────────────────────────────────────────
+const UFO_MAX_HP = 100, ALERT_MAX = 100;
 const UPGRADES = [
   {id:'beam',   name:'ビーム強化',  desc:'吸い上げ速度 +25%', cost:500, maxLv:4, icon:'⚡'},
   {id:'engine', name:'エンジン強化',desc:'移動速度 +20%',     cost:400, maxLv:4, icon:'🚀'},
@@ -182,41 +190,36 @@ const UPGRADES = [
   {id:'shield', name:'シールド',    desc:'HP上限 +30',        cost:700, maxLv:3, icon:'🛡'},
   {id:'gravity',name:'重力制御',    desc:'暴れ抵抗 −30%',     cost:800, maxLv:3, icon:'🌀'},
 ];
-
-// ─── Object Types ────────────────────────────────────────────────
 const OBJ_TYPES = [
-  {type:'human',  weight:70,   score:100,  speed:1.3, struggle:.22, w:24, h:44, reports:true },
-  {type:'cow',    weight:600,  score:300,  speed:0.4, struggle:.40, w:52, h:38 },
-  {type:'car',    weight:1500, score:800,  speed:0.9, struggle:.10, w:66, h:32 },
-  {type:'pig',    weight:100,  score:150,  speed:0.6, struggle:.30, w:42, h:28 },
-  {type:'chicken',weight:2,    score:50,   speed:2.2, struggle:.10, w:24, h:26 },
-  {type:'truck',  weight:3000, score:1500, speed:0.5, struggle:.05, w:82, h:40 },
-  {type:'sheep',  weight:80,   score:120,  speed:0.7, struggle:.25, w:40, h:32 },
-  {type:'dog',    weight:30,   score:80,   speed:1.9, struggle:.35, w:32, h:26 },
+  {type:'human',  weight:70,   score:100,  speed:1.3, w:2, h:4, reports:true, color:'#e53030' },
+  {type:'cow',    weight:600,  score:300,  speed:0.4, w:4, h:3, color:'#f2f2f2' },
+  {type:'car',    weight:1500, score:800,  speed:0.9, w:5, h:2, color:'#e03020' },
+  {type:'pig',    weight:100,  score:150,  speed:0.6, w:3, h:2, color:'#f5a0b0' },
+  {type:'chicken',weight:2,    score:50,   speed:2.2, w:1.5, h:1.5, color:'#f5ead0' },
+  {type:'truck',  weight:3000, score:1500, speed:0.5, w:7, h:3.5, color:'#2255aa' },
+  {type:'sheep',  weight:80,   score:120,  speed:0.7, w:3, h:2.5, color:'#f0f0ee' },
+  {type:'dog',    weight:30,   score:80,   speed:1.9, w:2, h:1.8, color:'#d4903a' },
 ];
-
-// ─── State ──────────────────────────────────────────────────────
-let state='title', score=0, captures=0, ufoHP=UFO_MAX_HP, alertLv=0;
-let alertDecay=0, spawnTmr=0, policeTmr=0, militaryOn=false;
-let upOpen=false, upLvs={beam:0,engine:0,stealth:0,shield:0,gravity:0};
-let particles=[], floatMsgs=[], objects=[], police=[], military=[];
-let beamOn=false, beamTarget=null, abductProg=0, struggleTmr=0, shakeTmr=0;
-let stars=[], gt=0;
-let ufo={x:W/2,y:H*.25,vx:0,vy:0,ft:0};
-let mx=W/2, my=H*.25;
-let comicFont='900 italic 20px "Arial Black",Arial,sans-serif';
-
-// ─── Stage Data ──────────────────────────────────────────────────
 const STAGES = [
-  {id:'ks', name:'カンザス農場', goal:15, x:180, y:300, clear:false, type:'rural', desc:'静かな農村。牛や鶏をターゲットにせよ。', bgCol:'#c07040'},
-  {id:'nv', name:'ナッシュビル閑静な住宅街', goal:25, x:360, y:340, clear:false, type:'town', desc:'人々が集まり始めた。警察の巡回に注意。', bgCol:'#508040'},
-  {id:'ch', name:'シカゴ郊外', goal:35, x:480, y:220, clear:false, type:'suburbs', desc:'工業地帯の近く。大型トラックや逃げ足の速い犬が多い。', bgCol:'#606070'},
-  {id:'dc', name:'ワシントンD.C. 首都圏', goal:45, x:650, y:260, clear:false, type:'capital', desc:'政府機関が密集。エージェントが目を光らせている。', bgCol:'#404090'},
-  {id:'ny', name:'ニューヨーク大都会', goal:60, x:720, y:180, clear:false, type:'metropolis', desc:'最終局面。あらゆる勢力がUFOを阻止しようとする。', bgCol:'#202050'},
+  {id:'ks', name:'カンザス農場', goal:15, x:180, y:300, clear:false, type:'rural', desc:'静かな農村。牛や鶏をターゲットにせよ。', bgCol:'#204010', fogCol:'#080a20'},
+  {id:'nv', name:'ナッシュビル閑静な住宅街', goal:25, x:360, y:340, clear:false, type:'town', desc:'人々が集まり始めた。警察の巡回に注意。', bgCol:'#304030', fogCol:'#0a1025'},
+  {id:'ch', name:'シカゴ郊外', goal:35, x:480, y:220, clear:false, type:'suburbs', desc:'工業地帯の近く。大型トラックや逃げ足の速い犬が多い。', bgCol:'#404040', fogCol:'#050510'},
+  {id:'dc', name:'ワシントンD.C. 首都圏', goal:45, x:650, y:260, clear:false, type:'capital', desc:'政府機関が密集。エージェントが目を光らせている。', bgCol:'#101030', fogCol:'#000010'},
+  {id:'ny', name:'ニューヨーク大都会', goal:60, x:720, y:180, clear:false, type:'metropolis', desc:'最終局面。あらゆる勢力がUFOを阻止しようとする。', bgCol:'#050510', fogCol:'#000'},
 ];
-let curStageIdx=0;
-let unlockedIdx=localStorage.getItem('ufo_unlocked')?parseInt(localStorage.getItem('ufo_unlocked')):0;
-let stageCaptures=0;
+
+// Unified State
+let state='title', score=0, captures=0, ufoHP=UFO_MAX_HP, alertLv=0;
+let upLvs={beam:0,engine:0,stealth:0,shield:0,gravity:0};
+let curStageIdx=0, stageCaptures=0, unlockedIdx=localStorage.getItem('ufo_unlocked')?parseInt(localStorage.getItem('ufo_unlocked')):0;
+let scene, camera, renderer, pipCamera, ufoGroup, beamMesh;
+let objects=[], particles=[], police=[], military=[];
+let beamOn=false, beamTarget=null, abductProg=0;
+let keys={}, mouse={vx:0};
+let clock = new THREE.Clock();
+const HORIZON  = H * 0.56; // used by stars/bg in card portraits
+const GROUND_Y = H * 0.74;
+var stars=[], gt=0;
 
 // ─── Helpers ─────────────────────────────────────────────────────
 const rnd=(a,b)=>a+(b-a)*Math.random();
@@ -849,832 +852,335 @@ function drawBackground(){
   hg.addColorStop(.5,'rgba(255,110,30,.22)');
   hg.addColorStop(1,'rgba(180,75,15,0)');
   ctx.fillStyle=hg; ctx.fillRect(0,HORIZON-28,W,72);
+// ─── End of 2D Draw Functions (Maintained for Zukan Portraits) ────────────────
+// ─── Helpers ─────────────────────────────────────────────────────
+const rnd=(a,b)=>a+(b-a)*Math.random();
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const lerp=(a,b,t)=>a+(b-a)*t;
+
+function addFM(txt,x,y,col,sz=20){ 
+  const el = document.createElement('div');
+  el.textContent = txt;
+  el.style.cssText = `position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);color:${col};font-size:${sz}px;font-weight:900;text-shadow:0 0 10px #000;pointer-events:none;z-index:1000;animation:fmAnim 1s ease-out forwards`;
+  document.getElementById('gc').appendChild(el);
+  setTimeout(()=>el.remove(), 1000);
+}
+const fmStyle = document.createElement('style');
+fmStyle.textContent = `@keyframes fmAnim { 0% { opacity:0; transform:translate(-50%, 0); } 20% { opacity:1; } 100% { opacity:0; transform:translate(-50%, -100px); } }`;
+document.head.appendChild(fmStyle);
+
+
+// ─── 3D ENGINE & LOGIC ──────────────────────────────────────────
+
+function init3D() {
+  const canvas = document.getElementById('c');
+  const W = canvas.width, H = canvas.height;
+  renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.shadowMap.enabled = true;
+
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x080a20, 0.002);
+
+  camera = new THREE.PerspectiveCamera(60, W/H, 0.1, 3000);
+  pipCamera = new THREE.PerspectiveCamera(45, 180/120, 0.1, 500);
+  
+  const ambient = new THREE.AmbientLight(0x4040a0, 0.6);
+  scene.add(ambient);
+  const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+  sun.position.set(100, 200, 100);
+  sun.castShadow = true;
+  scene.add(sun);
+
+  createUFO();
+  createTerrain();
+  createStars();
+
+  window.addEventListener('resize', onResize);
 }
 
-// ─── UFO ─────────────────────────────────────────────────────────
-function drawUFO(x, y, ft){
-  ctx.save();
-  let fy=Math.sin(ft)*5;
-  ctx.translate(x, y+fy);
+function createUFO() {
+  ufoGroup = new THREE.Group();
+  const bodyGeo = new THREE.CylinderGeometry(5, 7, 2, 32);
+  const bodyMat = new THREE.MeshPhongMaterial({color:0x5c6488, shininess:100});
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  ufoGroup.add(body);
 
-  // Ground shadow
-  let sd=ctx.createRadialGradient(0,GROUND_Y-y-fy+20,5,0,GROUND_Y-y-fy+20,60);
-  sd.addColorStop(0,'rgba(0,0,0,.3)'); sd.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=sd;
-  ctx.save(); ctx.scale(1,.25); ctx.translate(0,(GROUND_Y-y)*4);
-  ctx.beginPath(); ctx.arc(0,0,60,0,Math.PI*2); ctx.fill();
-  ctx.restore();
+  const domeGeo = new THREE.SphereGeometry(3, 32, 16, 0, Math.PI*2, 0, Math.PI/2);
+  const domeMat = new THREE.MeshPhongMaterial({color:0x60d0ff, transparent:true, opacity:0.7});
+  const dome = new THREE.Mesh(domeGeo, domeMat);
+  dome.position.y = 1;
+  ufoGroup.add(dome);
 
-  // Aura
-  let ar=ctx.createRadialGradient(0,0,10,0,0,80);
-  ar.addColorStop(0,'rgba(80,200,255,.12)'); ar.addColorStop(1,'rgba(0,80,200,0)');
-  ctx.fillStyle=ar; ctx.beginPath(); ctx.arc(0,0,80,0,Math.PI*2); ctx.fill();
+  const beamGeo = new THREE.ConeGeometry(5, 100, 32, 1, true);
+  const beamMat = new THREE.MeshBasicMaterial({color:0x00ff88, transparent:true, opacity:0.3, side:THREE.DoubleSide});
+  beamMesh = new THREE.Mesh(beamGeo, beamMat);
+  beamMesh.position.y = -50;
+  beamMesh.visible = false;
+  ufoGroup.add(beamMesh);
 
-  // Dome
-  let dg=ctx.createRadialGradient(-8,-22,4,0,-10,38);
-  dg.addColorStop(0,'rgba(160,235,255,.92)');
-  dg.addColorStop(.5,'rgba(60,130,210,.72)');
-  dg.addColorStop(1,'rgba(20,40,110,.3)');
-  ctx.fillStyle=dg;
-  ctx.beginPath(); ctx.ellipse(0,-10,30,22,0,Math.PI,0); ctx.fill();
-  ctx.strokeStyle='rgba(100,180,255,.4)'; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.ellipse(0,-10,30,22,0,Math.PI,0); ctx.stroke();
-
-  // Saucer body
-  let bg=ctx.createLinearGradient(0,-14,0,14);
-  bg.addColorStop(0,'#3c4268'); bg.addColorStop(.4,'#5c6488');
-  bg.addColorStop(.7,'#2c3258'); bg.addColorStop(1,'#1c2248');
-  ctx.fillStyle=bg; ctx.strokeStyle='rgba(100,140,255,.5)'; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.ellipse(0,0,56,13,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
-
-  // Rim highlight
-  ctx.strokeStyle='rgba(180,210,255,.5)'; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.ellipse(0,-4,54,10,0,Math.PI,0); ctx.stroke();
-
-  // Engine ring
-  let rg=ctx.createLinearGradient(0,5,0,16);
-  rg.addColorStop(0,'#4c5478'); rg.addColorStop(1,'#2a3060');
-  ctx.fillStyle=rg; ctx.strokeStyle='rgba(80,120,220,.4)'; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.ellipse(0,9,34,9,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
-
-  // Rotating lights
-  let t=gt*.003;
-  for(let i=0;i<12;i++){
-    let a=(i/12)*Math.PI*2+t, lx=Math.cos(a)*27, ly=7+Math.sin(a)*7;
-    let pulse=.55+.45*Math.sin(t*3+i*.9);
-    ctx.save(); ctx.globalAlpha=pulse;
-    let lg=ctx.createRadialGradient(lx,ly,0,lx,ly,6);
-    lg.addColorStop(0,'rgba(180,250,255,1)'); lg.addColorStop(1,'rgba(60,160,255,0)');
-    ctx.fillStyle=lg; ctx.beginPath(); ctx.arc(lx,ly,6,0,Math.PI*2); ctx.fill();
-    ctx.restore();
-  }
-
-  // Center emitter
-  let ep=beamOn?.85+.15*Math.sin(gt*.012):.32;
-  let eg=ctx.createRadialGradient(0,10,0,0,10,16);
-  eg.addColorStop(0,`rgba(80,255,100,${.75*ep})`);
-  eg.addColorStop(1,'rgba(0,180,40,0)');
-  ctx.fillStyle=eg; ctx.beginPath(); ctx.arc(0,10,16,0,Math.PI*2); ctx.fill();
-
-  ctx.restore();
+  ufoGroup.position.set(0, 40, 0);
+  scene.add(ufoGroup);
+  ufoGroup.add(pipCamera);
+  pipCamera.rotation.x = -Math.PI/2;
 }
 
-// ─── Vertical Beam (cylinder) ──────────────────────────────────────
-function drawVerticalBeam(ux, uy, ft){
-  let bx=ux;
-  let topY=uy+Math.sin(ft)*5+15; // bottom of UFO engine ring
-  let botY=GROUND_Y+22;
-  let hw=BEAM_HW;
-  let t=gt*.003;
+function createTerrain() {
+  const geo = new THREE.PlaneGeometry(3000, 3000, 100, 100);
+  const mat = new THREE.MeshPhongMaterial({color:0x112208, flatShading:true});
+  const plane = new THREE.Mesh(geo, mat);
+  plane.rotation.x = -Math.PI/2;
+  plane.receiveShadow = true;
+  scene.add(plane);
 
-  ctx.save();
-
-  // Outer atmospheric halo
-  let halo=ctx.createLinearGradient(bx-hw*2.8,0,bx+hw*2.8,0);
-  halo.addColorStop(0,'rgba(0,255,70,0)');
-  halo.addColorStop(.38,'rgba(40,255,90,.10)');
-  halo.addColorStop(.5,'rgba(60,255,110,.18)');
-  halo.addColorStop(.62,'rgba(40,255,90,.10)');
-  halo.addColorStop(1,'rgba(0,255,70,0)');
-  ctx.fillStyle=halo;
-  ctx.fillRect(bx-hw*2.8, topY, hw*5.6, botY-topY);
-
-  // Main cylinder body gradient (edge to center = dark to bright)
-  let cyl=ctx.createLinearGradient(bx-hw,0,bx+hw,0);
-  cyl.addColorStop(0,'rgba(10,160,50,.30)');
-  cyl.addColorStop(.18,'rgba(40,210,80,.58)');
-  cyl.addColorStop(.42,'rgba(100,255,130,.80)');
-  cyl.addColorStop(.5,'rgba(200,255,210,.92)');
-  cyl.addColorStop(.58,'rgba(100,255,130,.80)');
-  cyl.addColorStop(.82,'rgba(40,210,80,.58)');
-  cyl.addColorStop(1,'rgba(10,160,50,.30)');
-  ctx.fillStyle=cyl;
-  ctx.fillRect(bx-hw, topY, hw*2, botY-topY);
-
-  // Animated horizontal scan lines (flow downward)
-  ctx.save();
-  ctx.beginPath(); ctx.rect(bx-hw,topY,hw*2,botY-topY); ctx.clip();
-  ctx.globalAlpha=.14;
-  ctx.fillStyle='rgba(255,255,255,1)';
-  for(let i=0;i<16;i++){
-    let frac=((i/16)+t*.45)%1;
-    let sy=topY+(botY-topY)*frac;
-    ctx.fillRect(bx-hw,sy,hw*2,3);
-  }
-  ctx.restore();
-
-  // Left & right bright edge strips
-  ctx.save();
-  [bx-hw+2, bx+hw-4].forEach(ex=>{
-    let eg=ctx.createLinearGradient(ex,topY,ex,botY);
-    eg.addColorStop(0,'rgba(200,255,200,.6)');
-    eg.addColorStop(.5,'rgba(80,255,100,.35)');
-    eg.addColorStop(1,'rgba(200,255,200,.6)');
-    ctx.fillStyle=eg;
-    ctx.fillRect(ex,topY,3,botY-topY);
-  });
-  ctx.restore();
-
-  // Top ellipse cap (oval mouth at UFO bottom)
-  ctx.save();
-  let topG=ctx.createRadialGradient(bx,topY,0,bx,topY,hw);
-  topG.addColorStop(0,'rgba(220,255,230,.95)');
-  topG.addColorStop(.5,'rgba(80,255,120,.60)');
-  topG.addColorStop(1,'rgba(0,200,60,0)');
-  ctx.fillStyle=topG;
-  ctx.beginPath(); ctx.ellipse(bx,topY,hw,hw*.32,0,0,Math.PI*2); ctx.fill();
-  ctx.restore();
-
-  // Bottom ellipse cap (glowing floor circle)
-  ctx.save();
-  let botG=ctx.createRadialGradient(bx,botY,0,bx,botY,hw*1.5);
-  botG.addColorStop(0,'rgba(160,255,180,.72)');
-  botG.addColorStop(.45,'rgba(60,210,100,.42)');
-  botG.addColorStop(1,'rgba(0,160,50,0)');
-  ctx.fillStyle=botG;
-  ctx.beginPath(); ctx.ellipse(bx,botY,hw*1.5,hw*.42,0,0,Math.PI*2); ctx.fill();
-  ctx.restore();
-
-  // Pulse ring at beam origin
-  let pr=4+6*Math.sin(gt*.015);
-  ctx.save();
-  ctx.globalAlpha=.4+.3*Math.sin(gt*.015);
-  let prg=ctx.createRadialGradient(bx,topY+2,0,bx,topY+2,hw+pr);
-  prg.addColorStop(0,'rgba(180,255,200,.0)');
-  prg.addColorStop(.8,'rgba(80,255,120,.5)');
-  prg.addColorStop(1,'rgba(0,220,60,0)');
-  ctx.fillStyle=prg;
-  ctx.beginPath(); ctx.ellipse(bx,topY+2,hw+pr,(hw+pr)*.3,0,0,Math.PI*2); ctx.fill();
-  ctx.restore();
-
-  ctx.restore();
-}
-
-// ─── Police / Military ───────────────────────────────────────────
-function drawPolice(p){
-  ctx.save();
-  ctx.font='28px serif'; ctx.textAlign='center'; ctx.textBaseline='bottom';
-  if(p.dir<0){ctx.scale(-1,1); ctx.fillText('🚓',-p.x,p.y);}
-  else ctx.fillText('🚓',p.x,p.y);
-  // Siren
-  ctx.globalAlpha=.5;
-  ctx.fillStyle=Math.sin(gt*.025)>0?'#ff1100':'#0022ff';
-  ctx.beginPath(); ctx.arc(p.x,p.y-32,8,0,Math.PI*2); ctx.fill();
-  ctx.restore();
-}
-
-function drawMilitary(m){
-  ctx.save();
-  ctx.font='28px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  if(m.vx<0){ctx.scale(-1,1); ctx.fillText('🚁',-m.x,m.y);}
-  else ctx.fillText('🚁',m.x,m.y);
-  ctx.restore();
-}
-
-// ─── Particles & Float messages ───────────────────────────────────
-function drawParticles(){
-  for(let p of particles){
-    ctx.save(); ctx.globalAlpha=p.life;
-    ctx.fillStyle=p.col;
-    ctx.beginPath(); ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2); ctx.fill();
-    ctx.restore();
+  // Decorative trees with slight variation
+  const treeGeo = new THREE.ConeGeometry(3, 12, 6);
+  const treeMat = new THREE.MeshPhongMaterial({color:0x051d05});
+  for(let i=0; i<400; i++) {
+    const tree = new THREE.Mesh(treeGeo, treeMat);
+    const ang = Math.random() * Math.PI * 2;
+    const d = 150 + Math.random() * 1200;
+    tree.position.set(Math.cos(ang)*d, 6, Math.sin(ang)*d);
+    tree.rotation.y = Math.random() * Math.PI;
+    tree.scale.setScalar(0.5 + Math.random());
+    scene.add(tree);
   }
 }
 
-function drawFloatMsgs(){
-  for(let m of floatMsgs){
-    ctx.save();
-    ctx.globalAlpha=m.life;
-    ctx.font=`900 italic ${m.sz}px "Arial Black",Arial,sans-serif`;
-    ctx.textAlign='center';
-    // Comic outline
-    ctx.strokeStyle='rgba(0,0,0,.8)'; ctx.lineWidth=4;
-    ctx.strokeText(m.txt,m.x,m.y);
-    ctx.fillStyle=m.col;
-    ctx.fillText(m.txt,m.x,m.y);
-    ctx.restore();
+function createStars() {
+  const geo = new THREE.BufferGeometry();
+  const vertices = [];
+  for(let i=0; i<3000; i++) vertices.push(rnd(-1500,1500), rnd(150,800), rnd(-1500,1500));
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  const mat = new THREE.PointsMaterial({color:0xffffff, size:1.2});
+  scene.add(new THREE.Points(geo, mat));
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  
+  if(state==='playing') {
+    updateFlight(dt);
+    update3DObjects(dt);
+    update3DBeam(dt);
+    update3DAlerts(dt);
+    updateHUD();
+    checkGameOver();
+  } else if(state==='title') {
+    ufoGroup.rotation.y += dt * 0.4;
+    ufoGroup.position.y = 40 + Math.sin(clock.elapsedTime) * 5;
+  } else if(state==='over' || state==='clear') {
+    // Keep rendering background but stop flight
+    ufoGroup.rotation.y += dt * 0.1;
+  }
+  
+  renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+  renderer.setScissorTest(false);
+  renderer.render(scene, camera);
+  
+  if(state==='playing') {
+    const pipW = 180, pipH = 120;
+    renderer.setViewport(window.innerWidth - pipW - 20, 20, pipW, pipH);
+    renderer.setScissor(window.innerWidth - pipW - 20, 20, pipW, pipH);
+    renderer.setScissorTest(true);
+    renderer.render(scene, pipCamera);
   }
 }
 
-// ─── Particle helpers ────────────────────────────────────────────
-function spawnBeamParticles(x,y){
-  for(let i=0;i<3;i++) particles.push({
-    x:x+rnd(-BEAM_HW*.8,BEAM_HW*.8), y:y+rnd(-5,5),
-    vx:rnd(-.4,.4), vy:rnd(-1.8,-.4),
-    r:rnd(2,5), col:`hsl(${120+rnd(-15,15)},100%,${65+rnd(0,25)}%)`, life:1
-  });
-}
-function spawnCaptureEffect(x,y){
-  for(let i=0;i<35;i++){
-    let a=rnd(0,Math.PI*2),s=rnd(2,7);
-    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,r:rnd(3,9),col:`hsl(${rnd(100,160)},100%,70%)`,life:1});
-  }
-}
-function spawnDropEffect(x,y){
-  for(let i=0;i<18;i++){
-    let a=rnd(0,Math.PI*2);
-    particles.push({x,y,vx:Math.cos(a)*rnd(1,4),vy:Math.sin(a)*rnd(1,4),r:rnd(2,5),col:`hsl(${rnd(0,40)},80%,60%)`,life:1});
-  }
-}
-function spawnHitEffect(x,y){
-  for(let i=0;i<14;i++) particles.push({x,y,vx:rnd(-3,3),vy:rnd(-3,3),r:rnd(2,7),col:`hsl(${rnd(0,30)},100%,60%)`,life:1});
-}
-function addFM(txt,x,y,col,sz=20){ floatMsgs.push({txt,x,y,vy:-1.4,col,sz,life:1}); }
-
-// ─── Spawn ───────────────────────────────────────────────────────
-function spawnObject(){
-  let st = STAGES[curStageIdx];
-  let pool = [];
+function spawn3DObject() {
+  const st = STAGES[curStageIdx];
+  const pool = [];
   OBJ_TYPES.forEach(tp => {
     let weight = 10;
-    if(st.type === 'rural') {
-      if(['cow','sheep','chicken','pig'].includes(tp.type)) weight = 40;
-      if(['car','truck'].includes(tp.type)) weight = 2;
-    } else if(st.type === 'town') {
-      if(['human','car','dog'].includes(tp.type)) weight = 30;
-    } else if(st.type === 'suburbs') {
-      if(['truck','car','dog','human'].includes(tp.type)) weight = 30;
-    } else if(st.type === 'capital' || st.type === 'metropolis') {
-       weight = 20;
-    }
-    for(let i=0; i<weight; i++) pool.push(tp);
+    if(st.type==='rural' && ['cow','sheep','chicken','pig'].includes(tp.type)) weight=40;
+    for(let i=0;i<weight;i++) pool.push(tp);
   });
+  const tp = pool[Math.floor(Math.random()*pool.length)];
+  const group = new THREE.Group();
+  const color = tp.color || 0xcccccc;
   
-  let tp = pool[Math.floor(Math.random()*pool.length)];
-  let fl=Math.random()<.5;
-  let vArr=VARIANTS[tp.type]||[];
-  let vIdx=vArr.length?pickVariantIdx(vArr):0;
-  let vd=vArr[vIdx]||{};
-  objects.push({
-    ...tp,
-    x: fl?-tp.w:W+tp.w, dir:fl?1:-1,
-    y: GROUND_Y-tp.h/2+2,
-    vx: (fl?1:-1)*tp.speed*(rnd(.7,1.3)),
-    alertState:null, alertTimer:0, reportCD:0,
-    shake:false, captured:false,
-    ascending:false, ascX:0, ascY:0,
-    pauseTimer:0, nextPause:rnd(3000,10000),
-    variantIdx: vIdx,
-    score: vd.score || tp.score,
-  });
-}
-function spawnPolice(){
-  let fl=Math.random()<.5;
-  police.push({x:fl?-60:W+60,y:GROUND_Y+2,dir:fl?1:-1,speed:2.6,shootTmr:2000,type:'police'});
-}
-function spawnMilitary(){
-  military.push({
-    x:Math.random()<.5?-70:W+70, y:rnd(H*.08,H*.42),
-    vx:(Math.random()<.5?1:-1)*1.9, vy:rnd(-.4,.4),
-    shootTmr:rnd(60,120), type:'heli'
-  });
-}
-
-// ─── Upgrade UI ──────────────────────────────────────────────────
-function renderUpgrades(){
-  let el=document.getElementById('ulist'); el.innerHTML='';
-  UPGRADES.forEach(up=>{
-    let lv=upLvs[up.id], cost=up.cost*(lv+1), maxed=lv>=up.maxLv, afford=score>=cost;
-    let d=document.createElement('div'); d.className='ui';
-    d.innerHTML=`<div style="flex:1"><div class="un">${up.icon} ${up.name} <span style="color:#888;font-size:10px">Lv${lv}/${up.maxLv}</span></div><div class="ud">${up.desc}</div></div>
-    <button class="ub${maxed?' mx':''}" ${maxed||!afford?'disabled':''} data-id="${up.id}" data-cost="${cost}">${maxed?'MAX':'💰'+cost}</button>`;
-    el.appendChild(d);
-  });
-  el.querySelectorAll('.ub:not(:disabled):not(.mx)').forEach(b=>{
-    b.onclick=()=>{
-      let id=b.dataset.id, cost=+b.dataset.cost;
-      let up=UPGRADES.find(u=>u.id===id);
-      if(score>=cost && upLvs[id]<up.maxLv){
-        score-=cost; upLvs[id]++;
-        if(id==='shield') ufoHP=Math.min(ufoHP+30, UFO_MAX_HP+30*upLvs.shield);
-        addFM('⚡ 強化！',W/2,H/2-40,'#ffee44',24);
-        renderUpgrades(); updateHUD();
-      }
-    };
-  });
-}
-
-// ─── HUD ─────────────────────────────────────────────────────────
-function updateHUD(){
-  document.getElementById('sd').textContent=score.toLocaleString();
-  document.getElementById('cc').textContent=captures;
-  let mhp=UFO_MAX_HP+30*upLvs.shield;
-  document.getElementById('hpf').style.width=(ufoHP/mhp*100)+'%';
-  document.getElementById('alf').style.width=(alertLv/ALERT_MAX*100)+'%';
-  let at=alertLv<20?'平和':alertLv<50?'警戒':alertLv<80?'危険':'緊急';
-  document.getElementById('alt').textContent=at;
-}
-
-// ─── Upgrade value getters ────────────────────────────────────────
-const beamSpeed   =()=>8*(1+upLvs.beam*.25);
-const moveSpeed   =()=>1*(1+upLvs.engine*.2);
-const detectRange =()=>180*(1-upLvs.stealth*.25);
-const struggleRes =()=>upLvs.gravity*.3;
-
-// ─── Game Logic ───────────────────────────────────────────────────
-function updateUFO(dt){
-  let spd=moveSpeed();
-  let dx=mx-ufo.x, dy=my-ufo.y;
-  ufo.vx+=(dx*.006*spd); ufo.vy+=(dy*.006*spd);
-  ufo.vx*=.88; ufo.vy*=.88;
-  ufo.x+=ufo.vx*(dt/16); ufo.y+=ufo.vy*(dt/16);
-  ufo.x=clamp(ufo.x,44,W-44); ufo.y=clamp(ufo.y,30,GROUND_Y-44);
-  ufo.ft+=dt*.002;
-}
-
-function updateObjects(dt){
-  for(let obj of objects){
-    if(obj.captured||obj.ascending) continue;
-    obj.nextPause-=dt;
-    if(obj.nextPause<=0){
-      if(obj.pauseTimer<=0){ obj.pauseTimer=rnd(1000,2500); obj.nextPause=rnd(4000,11000); }
-    }
-    if(obj.pauseTimer>0) obj.pauseTimer-=dt;
-    else obj.x+=obj.vx*(dt/16);
-    if(obj.x>W+120||obj.x<-120){ obj.dir*=-1; obj.vx*=-1; }
-
-    // Alert / report
-    let d=dist(obj,ufo);
-    let dr=detectRange();
-    if(obj.reports && beamOn && d<dr){
-      obj.reportCD-=dt;
-      if(!obj.alertState){ obj.alertState='watching'; obj.alertTimer=3200; }
-      if(obj.alertState==='watching'){ obj.alertTimer-=dt; if(obj.alertTimer<=0){obj.alertState='reporting';obj.alertTimer=2000;} }
-      if(obj.alertState==='reporting' && obj.reportCD<=0){
-        obj.reportCD=5500;
-        alertLv=Math.min(ALERT_MAX,alertLv+14);
-        addFM('📱 通報！',obj.x,obj.y-obj.h-30,'#ff4400',16);
-        alertDecay=9000;
-      }
-      if(obj.alertState && d<dr*.55) obj.x-=obj.dir*(obj.speed+1)*(dt/16)*.5;
-    } else if(obj.alertState && d>dr*1.3){ obj.alertState=null; }
-  }
-}
-
-function updateAscending(dt){
-  for(let obj of objects){
-    if(!obj.ascending) continue;
-    obj.ascY-=60*(dt/16)*.25;
-    obj.ascX=lerp(obj.ascX,ufo.x,.06);
-    if(obj.ascY<=ufo.y+12){
-      obj.ascending=false; obj.captured=true;
-      captures++; stageCaptures++; score+=obj.score;
-      spawnCaptureEffect(ufo.x,ufo.y);
-      addFM('+'+obj.score+'pt!',ufo.x,ufo.y-50,'#7ff0ff',22);
-      addToCollection(obj);
-      updateHUD();
-      checkStageClear();
-    }
-  }
-  objects=objects.filter(o=>!o.captured||o.ascending);
-}
-
-function checkStageClear(){
-  let st = STAGES[curStageIdx];
-  if(stageCaptures >= st.goal){
-    state = 'cleared';
-    let sc = document.getElementById('scov');
-    sc.style.display='flex';
-    document.getElementById('sc-stats').innerHTML=`捕獲数: ${stageCaptures} / ${st.goal}<br>獲得スコア: ${score} pt`;
-    if(curStageIdx === unlockedIdx && unlockedIdx < STAGES.length-1){
-      unlockedIdx++;
-      localStorage.setItem('ufo_unlocked', unlockedIdx);
-    }
-  }
-}
-
-function findBeamTarget(){
-  let fy=Math.sin(ufo.ft)*5, topY=ufo.y+fy+15, botY=GROUND_Y+22;
-  let best=null, bestD=Infinity;
-  for(let obj of objects){
-    if(obj.captured||obj.ascending) continue;
-    let dx=Math.abs(obj.x-ufo.x);
-    if(dx<=BEAM_HW+obj.w*.45 && obj.y>=ufo.y && obj.y<=botY+10){
-      if(dx<bestD){ bestD=dx; best=obj; }
-    }
-  }
-  return best;
-}
-
-function updateBeam(dt){
-  if(!beamOn||!beamTarget) return;
-  let obj=beamTarget;
-  if(obj.captured||obj.ascending){ beamOn=false; beamTarget=null; return; }
-  if(Math.abs(obj.x-ufo.x)>BEAM_HW+obj.w*.5){ beamOn=false; beamTarget=null; return; }
-
-  let wf=70/obj.weight;
-  abductProg+=beamSpeed()*wf*(dt/16);
-  spawnBeamParticles(obj.x,obj.y-obj.h/2);
-
-  struggleTmr-=dt;
-  if(struggleTmr<=0){
-    struggleTmr=rnd(1600,4000);
-    let res=1-struggleRes();
-    if(Math.random()<obj.struggle*res){
-      obj.shake=true; shakeTmr=900;
-      let penalty=rnd(18,32);
-      abductProg-=penalty;
-      addFM('暴れた！',obj.x,obj.y-obj.h-20,'#ff8800',17);
-      if(abductProg<0){
-        abductProg=0; beamOn=false; beamTarget=null;
-        spawnDropEffect(obj.x,obj.y);
-        addFM('落とした！',obj.x,obj.y-obj.h-25,'#ff3300',20);
-        return;
-      }
-    }
-  }
-  if(shakeTmr>0){ shakeTmr-=dt; obj.shake=shakeTmr>0; } else obj.shake=false;
-
-  if(abductProg>=100){
-    obj.ascending=true; obj.ascX=obj.x; obj.ascY=obj.y;
-    beamOn=false; beamTarget=null; abductProg=0;
-  }
-}
-
-function updatePolice(dt){
-  for(let p of police){
-    let dx=ufo.x-p.x; p.dir=dx>0?1:-1;
-    p.x+=p.dir*p.speed*(dt/16);
-    p.shootTmr-=dt;
-    if(p.shootTmr<=0 && dist(p,ufo)<220){
-      p.shootTmr=2200; ufoHP-=5;
-      spawnHitEffect(ufo.x,ufo.y);
-      addFM('被弾！',ufo.x,ufo.y-55,'#ff2200',19);
-      updateHUD();
-    }
-  }
-  police=police.filter(p=>p.x>-120&&p.x<W+120);
-}
-
-function updateMilitary(dt){
-  for(let m of military){
-    let dx=ufo.x-m.x, dy=ufo.y-m.y, dn=Math.hypot(dx,dy)||1;
-    let spd=Math.abs(m.vx); // use vx as speed
-    m.x+=dx/dn*spd*(dt/16);
-    m.y+=dy/dn*spd*(dt/16);
-    m.x=clamp(m.x,-80,W+80);
-    m.y=clamp(m.y,20,H-80);
-    m.shootTmr-=dt;
-    if(m.shootTmr<=0 && dist(m,ufo)<180){
-      m.shootTmr=1600; ufoHP-=10;
-      spawnHitEffect(ufo.x,ufo.y);
-      addFM('ミサイル！',ufo.x,ufo.y-65,'#ff0000',22);
-      updateHUD();
-    }
-  }
-}
-
-function updateAlerts(dt){
-  if(alertDecay>0) alertDecay-=dt;
-  else alertLv=Math.max(0,alertLv-2.5*(dt/1000));
-  policeTmr-=dt;
-  if(alertLv>=28&&policeTmr<=0){ policeTmr=13000; spawnPolice(); addFM('🚓 警察出動！',W/2,H*.4,'#ff8800',26); }
-  if(alertLv>=68&&!militaryOn){ militaryOn=true; spawnMilitary(); addFM('🚁 軍隊出動！',W/2,H*.38,'#ff2200',30); }
-  if(alertLv>=92&&Math.random()<.0008) spawnMilitary();
-}
-
-function updateParticles(dt){
-  particles.forEach(p=>{ p.x+=p.vx*(dt/16); p.y+=p.vy*(dt/16); p.vy+=.06*(dt/16); p.life-=.018*(dt/16); });
-  particles=particles.filter(p=>p.life>0);
-}
-
-function updateFMs(dt){
-  floatMsgs.forEach(m=>{ m.y+=m.vy*(dt/16); m.life-=.016*(dt/16); });
-  floatMsgs=floatMsgs.filter(m=>m.life>0);
-}
-
-function checkGameOver(){
-  let mhp=UFO_MAX_HP+30*upLvs.shield;
-  if(ufoHP<=0){ ufoHP=0; updateHUD(); doGameOver(); }
-}
-
-// ─── Game flow ────────────────────────────────────────────────────
-function startGame(){
-  state='playing'; score=0; captures=0; ufoHP=UFO_MAX_HP; alertLv=0;
-  alertDecay=0; spawnTmr=0; policeTmr=0; militaryOn=false;
-  upLvs={beam:0,engine:0,stealth:0,shield:0,gravity:0};
-  ufo={x:W/2,y:H*.25,vx:0,vy:0,ft:0};
-  objects=[]; police=[]; military=[]; particles=[]; floatMsgs=[];
-  beamOn=false; beamTarget=null; abductProg=0;
-  document.getElementById('ov').style.display='none';
-  updateHUD();
-  for(let i=0;i<9;i++) spawnObject();
-}
-
-function doGameOver(){
-  state='gameover';
-  let ov=document.getElementById('ov');
-  ov.style.display='flex';
-  ov.innerHTML=`
-    <div style="font-size:70px;margin-bottom:6px">💥</div>
-    <h1 style="color:#ff4444;text-shadow:0 0 30px #ff0000,0 0 60px #880000">GAME OVER</h1>
-    <div class="sub">UFOが撃墜されました...<br>
-    最終スコア: <span style="color:#7ff0ff;font-size:26px;font-weight:900">${score.toLocaleString()}</span> pt<br>
-    捕獲数: <span style="color:#ffdd55">${captures}</span> 体</div>
-    <div style="display:flex;gap:10px">
-      <button class="btn" id="rb">🔄 再挑戦</button>
-      <button class="btn" id="mb">🌍 マップへ</button>
-    </div>`;
-  document.getElementById('rb').onclick=()=>startLevel(curStageIdx);
-  document.getElementById('mb').onclick=openMap;
-}
-
-// ─── Map System Logic ─────────────────────────────────────────────
-const mc = document.getElementById('mc');
-const mctx = mc.getContext('2d');
-let selectedNodeIdx = -1;
-
-function openMap(){
-  state='map';
-  document.getElementById('mov').style.display='flex';
-  document.getElementById('ov').style.display='none';
-  document.getElementById('scov').style.display='none';
-  drawMap();
-}
-
-function drawMap(){
-  mctx.clearRect(0,0,800,500);
-  
-  // Ocean Background
-  let og = mctx.createLinearGradient(0,0,0,500);
-  og.addColorStop(0,'#051530'); og.addColorStop(1,'#0a2a4a');
-  mctx.fillStyle=og; mctx.fillRect(0,0,800,500);
-  
-  // Grid lines
-  mctx.strokeStyle='rgba(100,200,255,0.05)'; mctx.lineWidth=1;
-  for(let x=0;x<800;x+=40){mctx.beginPath();mctx.moveTo(x,0);mctx.lineTo(x,500);mctx.stroke();}
-  for(let y=0;y<500;y+=40){mctx.beginPath();mctx.moveTo(0,y);mctx.lineTo(800,y);mctx.stroke();}
-
-  // USA Map Shape (More detailed)
-  const usa_poly = [
-    [80,100],[120,60],[220,65],[350,75],[550,70],[720,90],
-    [760,110],[740,240],[780,260],[740,350],[690,440],
-    [640,430],[580,380],[520,385],[420,440],[380,442],
-    [320,370],[240,365],[180,410],[100,380],[70,300],[85,240],[60,160]
-  ];
-  
-  // Land Glow
-  mctx.shadowBlur = 30; mctx.shadowColor = 'rgba(0,200,255,0.2)';
-  
-  let lg = mctx.createLinearGradient(100,100,700,400);
-  lg.addColorStop(0,'#0a3a2a'); lg.addColorStop(0.5,'#1a4a3a'); lg.addColorStop(1,'#0a2a4a');
-  mctx.fillStyle=lg;
-  mctx.beginPath();
-  mctx.moveTo(usa_poly[0][0], usa_poly[0][1]);
-  usa_poly.forEach(p=>mctx.lineTo(p[0],p[1]));
-  mctx.closePath();
-  mctx.fill();
-  mctx.shadowBlur = 0;
-  
-  mctx.strokeStyle='rgba(100,220,255,0.4)'; mctx.lineWidth=3; mctx.stroke();
-
-  // Terrain highlights (Farm/Suburbs/City indicators)
-  // Kansas area (Green)
-  mctx.fillStyle='rgba(40,180,80,0.15)';
-  mctx.beginPath(); mctx.arc(200,280,60,0,Math.PI*2); mctx.fill();
-  // NY/East area (Industrial/Blue)
-  mctx.fillStyle='rgba(100,150,255,0.15)';
-  mctx.beginPath(); mctx.arc(680,220,80,0,Math.PI*2); mctx.fill();
-
-  // Draw Paths with "Travel" effect
-  mctx.setLineDash([8,6]);
-  mctx.strokeStyle='rgba(100,220,255,0.3)'; mctx.lineWidth=2;
-  for(let i=0; i<STAGES.length-1; i++){
-    mctx.beginPath();
-    mctx.moveTo(STAGES[i].x, STAGES[i].y);
-    mctx.lineTo(STAGES[i+1].x, STAGES[i+1].y);
-    mctx.stroke();
-  }
-  mctx.setLineDash([]);
-
-  // Draw Nodes
-  STAGES.forEach((s,i)=>{
-    let locked = i > unlockedIdx;
-    let selected = i === selectedNodeIdx;
-    let current = i === unlockedIdx;
-    
-    mctx.save();
-    mctx.translate(s.x, s.y);
-    
-    // Wave animation for unlocked
-    if(!locked){
-      let pulse = 0.5 + 0.5 * Math.sin(Date.now()*0.005);
-      mctx.strokeStyle = `rgba(0,255,255,${0.2*pulse})`; mctx.lineWidth=2;
-      mctx.beginPath(); mctx.arc(0,0,15+pulse*10,0,Math.PI*2); mctx.stroke();
-    }
-
-    // Node core
-    let r = selected ? 11 : 7;
-    let grad = mctx.createRadialGradient(0,0,0,0,0,r);
-    if(locked){
-      grad.addColorStop(0,'#333'); grad.addColorStop(1,'#111');
-    } else if(selected){
-      grad.addColorStop(0,'#fff'); grad.addColorStop(1,'#00e6ff');
-    } else {
-      grad.addColorStop(0,'#00e6ff'); grad.addColorStop(1,'#0066aa');
-    }
-    
-    mctx.fillStyle=grad; mctx.beginPath(); mctx.arc(0,0,r,0,Math.PI*2); mctx.fill();
-    mctx.strokeStyle = locked ? '#222' : '#fff'; mctx.lineWidth=selected?3:1.5; mctx.stroke();
-
-    // Icon/Symbol hint
-    mctx.fillStyle = '#fff'; mctx.font = '10px Segoe UI'; mctx.textAlign='center';
-    let icon = '';
-    if(s.id==='ks') icon='🌽';
-    if(s.id==='nv') icon='🎸';
-    if(s.id==='ch') icon='🏭';
-    if(s.id==='dc') icon='🏛';
-    if(s.id==='ny') icon='🗽';
-    if(!locked) mctx.fillText(icon, 0, -18);
-
-    // Label
-    mctx.fillStyle = locked ? 'rgba(255,255,255,0.2)' : '#fff';
-    mctx.font = (selected||current)?'900 12px Segoe UI':'11px Segoe UI';
-    mctx.fillText(locked?'???':s.name, 0, 24);
-    
-    if(i < unlockedIdx) {
-       mctx.fillStyle='#ffff00'; mctx.font='10px serif'; mctx.fillText('★', 0, -32);
-    }
-    
-    // Current UFO indicator
-    if(current && !selected){
-       mctx.save();
-       mctx.translate(0, -35 + Math.sin(Date.now()*0.01)*5);
-       mctx.fillStyle='#00ff88'; mctx.beginPath(); mctx.moveTo(-5,0);mctx.lineTo(5,0);mctx.lineTo(0,8);mctx.closePath();mctx.fill();
-       mctx.restore();
-    }
-    
-    mctx.restore();
-  });
-}
-
-mc.onclick = (e) => {
-  let r = mc.getBoundingClientRect();
-  // Map display pixels to internal 800x500 coordinates
-  let scaleX = 800 / r.width;
-  let scaleY = 500 / r.height;
-  let x = (e.clientX - r.left) * scaleX;
-  let y = (e.clientY - r.top) * scaleY;
-  
-  STAGES.forEach((s,i)=>{
-    if(dist({x,y}, s) < 25 && i <= unlockedIdx){
-      selectedNodeIdx = i;
-      document.getElementById('m-st-name').textContent = s.name;
-      document.getElementById('m-st-goal').textContent = `目標: ${s.goal} 捕獲 | ${s.desc}`;
-      document.getElementById('m-st-btn').style.display = 'inline-block';
-      drawMap();
-    }
-  });
-};
-
-document.getElementById('m-st-btn').onclick = () => {
-  if(selectedNodeIdx !== -1) startLevel(selectedNodeIdx);
-};
-
-function startLevel(idx){
-  curStageIdx = idx;
-  state='playing';
-  stageCaptures=0; score=0; captures=0; ufoHP=UFO_MAX_HP; alertLv=0;
-  alertDecay=0; spawnTmr=0; policeTmr=0; militaryOn=false;
-  ufo={x:W/2,y:H*.25,vx:0,vy:0,ft:0};
-  objects=[]; police=[]; military=[]; particles=[]; floatMsgs=[];
-  beamOn=false; beamTarget=null; abductProg=0;
-  document.getElementById('mov').style.display='none';
-  document.getElementById('ov').style.display='none';
-  document.getElementById('scov').style.display='none';
-  updateHUD();
-  for(let i=0;i<9;i++) spawnObject();
-}
-
-document.getElementById('sc-btn').onclick = () => {
-  openMap();
-};
-
-// ─── Beam range indicator ────────────────────────────────────────
-function drawBeamRangeIndicator(){
-  if(state!=='playing') return;
-  let fy=Math.sin(ufo.ft)*5;
-  // Show beam footprint on ground
-  let pulse=.15+.08*Math.sin(gt*.01);
-  let g=ctx.createRadialGradient(ufo.x,GROUND_Y+20,2,ufo.x,GROUND_Y+20,BEAM_HW+20);
-  g.addColorStop(0,`rgba(80,255,100,${pulse})`);
-  g.addColorStop(.6,`rgba(40,200,70,${pulse*.5})`);
-  g.addColorStop(1,'rgba(0,180,50,0)');
-  ctx.fillStyle=g;
-  ctx.beginPath(); ctx.ellipse(ufo.x,GROUND_Y+20,BEAM_HW+20,(BEAM_HW+20)*.28,0,0,Math.PI*2); ctx.fill();
-  // Dashed oval
-  ctx.save();
-  ctx.strokeStyle=`rgba(80,255,100,${.25+.15*Math.sin(gt*.012)})`;
-  ctx.lineWidth=1.5; ctx.setLineDash([6,5]);
-  ctx.beginPath(); ctx.ellipse(ufo.x,GROUND_Y+20,BEAM_HW,(BEAM_HW)*.28,0,0,Math.PI*2); ctx.stroke();
-  ctx.restore();
-}
-
-// ─── Main Loop ────────────────────────────────────────────────────
-let lastT=0;
-function loop(ts){
-  let dt=Math.min(ts-lastT,50); lastT=ts;
-  gt=ts;
-  ctx.clearRect(0,0,W,H);
-  drawBackground();
-
-  if(state==='playing'){
-    spawnTmr-=dt;
-    if(spawnTmr<=0){ spawnTmr=Math.max(2200-score*.4,900); if(objects.length<22) spawnObject(); }
-    updateUFO(dt);
-    updateObjects(dt);
-    updateBeam(dt);
-    updateAscending(dt);
-    updatePolice(dt);
-    updateMilitary(dt);
-    updateAlerts(dt);
-    updateParticles(dt);
-    updateFMs(dt);
-    checkGameOver();
-    updateHUD();
+  if(tp.type === 'human') {
+    // Head
+    const head = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), new THREE.MeshPhongMaterial({color:0xf5b990}));
+    head.position.y = 3.6;
+    group.add(head);
+    // Body
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.6, 0.8), new THREE.MeshPhongMaterial({color:color}));
+    body.position.y = 1.8;
+    group.add(body);
+    // Legs
+    const leg1 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.5, 0.5), new THREE.MeshPhongMaterial({color:0x222222}));
+    leg1.position.set(-0.4, 0.75, 0); group.add(leg1);
+    const leg2 = leg1.clone(); leg2.position.set(0.4, 0.75, 0); group.add(leg2);
+  } else if(['cow','pig','sheep','dog'].includes(tp.type)) {
+    const bw = tp.w * 0.8, bh = tp.h * 0.7;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bw * 0.5), new THREE.MeshPhongMaterial({color:color}));
+    body.position.y = bh/2 + 1.2;
+    group.add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(bh*0.6, bh*0.6, bh*0.6), new THREE.MeshPhongMaterial({color:color}));
+    head.position.set(-bw/2, bh + 0.8, 0);
+    group.add(head);
+    [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(([sx,sz]) => {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.4, 0.4), new THREE.MeshPhongMaterial({color:0x333333}));
+      leg.position.set(sx*(bw*0.3), 0.7, sz*(bw*0.2));
+      group.add(leg);
+    });
+    group.rotation.y = Math.random() * Math.PI * 2;
   } else {
-    // Animate stars still
-    updateParticles(dt); updateFMs(dt);
+    group.add(new THREE.Mesh(new THREE.BoxGeometry(tp.w/2, tp.h/2, tp.w/2), new THREE.MeshPhongMaterial({color:color})));
+    group.children[0].position.y = tp.h/4;
   }
-
-  // Draw order: ground objects → beam → ascending → UFO → police/military → particles → UI
-  for(let obj of objects) drawEntitySprite(obj);
-
-  if(beamOn){
-    drawVerticalBeam(ufo.x, ufo.y, ufo.ft);
-  }
-  drawBeamRangeIndicator();
-
-  for(let obj of objects) drawEntityAscending(obj);
-
-  drawUFO(ufo.x, ufo.y, ufo.ft);
-
-  for(let p of police) drawPolice(p);
-  for(let m of military) drawMilitary(m);
-
-  drawParticles();
-  drawFloatMsgs();
-
-  // Vignette
-  let vg=ctx.createRadialGradient(W/2,H/2,H*.28,W/2,H/2,W*.78);
-  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,16,.42)');
-  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
-
-  requestAnimationFrame(loop);
+  
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 450 + Math.random() * 600;
+  group.position.set(ufoGroup.position.x + Math.cos(angle)*dist, 0, ufoGroup.position.z + Math.sin(angle)*dist);
+  group.userData = {...tp, variantIdx: Math.floor(Math.random()*3)};
+  scene.add(group);
+  objects.push(group);
 }
 
-// ─── Input ────────────────────────────────────────────────────────
-canvas.addEventListener('mousemove',e=>{
-  let r=canvas.getBoundingClientRect();
-  mx=e.clientX-r.left; my=e.clientY-r.top;
-});
-canvas.addEventListener('touchmove',e=>{
-  let r=canvas.getBoundingClientRect();
-  mx=e.touches[0].clientX-r.left; my=e.touches[0].clientY-r.top;
-  e.preventDefault();
-},{passive:false});
+function spawn3DPolice() {
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(new THREE.BoxGeometry(6, 3, 10), new THREE.MeshPhongMaterial({color:0x111111})));
+  group.children[0].position.y = 1.5;
+  const siren = new THREE.Mesh(new THREE.BoxGeometry(2, 0.6, 1), new THREE.MeshPhongMaterial({color:0xff0000}));
+  siren.position.y = 3.3;
+  group.add(siren);
+  const angle = Math.random() * Math.PI * 2;
+  group.position.set(ufoGroup.position.x + Math.cos(angle)*800, 0, ufoGroup.position.z + Math.sin(angle)*800);
+  group.userData = {type:'police', speed:55, shootTmr:2.5};
+  scene.add(group);
+  police.push(group);
+}
 
-function toggleBeam(){
-  if(state!=='playing') return;
-  if(!beamOn){
-    let t=findBeamTarget();
-    if(t){ beamOn=true; beamTarget=t; abductProg=0; struggleTmr=rnd(2000,4000); }
-    else{  // fire beam even without target
-      beamOn=true; beamTarget=null;
+function spawn3DMilitary() {
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(new THREE.BoxGeometry(5, 5, 14), new THREE.MeshPhongMaterial({color:0x223322})));
+  const rotor = new THREE.Mesh(new THREE.BoxGeometry(18, 0.2, 2), new THREE.MeshPhongMaterial({color:0x111111}));
+  rotor.position.y = 3; rotor.name = 'rotor';
+  group.add(rotor);
+  const angle = Math.random() * Math.PI * 2;
+  group.position.set(ufoGroup.position.x + Math.cos(angle)*900, rnd(50,150), ufoGroup.position.z + Math.sin(angle)*900);
+  group.userData = {type:'military', speed:50, shootTmr:2};
+  scene.add(group);
+  military.push(group);
+}
+
+function updateFlight(dt) {
+  const speed = 70 * (1 + upLvs.engine*0.25);
+  if(keys['KeyW']) ufoGroup.translateZ(-speed * dt);
+  if(keys['KeyS']) ufoGroup.translateZ(speed * dt);
+  if(keys['KeyA']) ufoGroup.translateX(-speed * dt);
+  if(keys['KeyD']) ufoGroup.translateX(speed * dt);
+  if(keys['KeyQ']) ufoGroup.position.y += speed * dt;
+  if(keys['KeyE']) ufoGroup.position.y -= speed * dt;
+  ufoGroup.position.y = clamp(ufoGroup.position.y, 10, 250);
+  ufoGroup.rotation.y -= mouse.vx * 0.005;
+  mouse.vx *= 0.9;
+  const offset = new THREE.Vector3(0, 35, 80);
+  offset.applyQuaternion(ufoGroup.quaternion);
+  camera.position.lerp(ufoGroup.position.clone().add(offset), 0.1);
+  camera.lookAt(ufoGroup.position);
+}
+
+function update3DObjects(dt) {
+  objects.forEach(obj => {
+    if(obj.userData.captured) return;
+    obj.position.x += Math.sin(clock.elapsedTime + obj.position.z) * 1.5 * dt;
+    if(obj.position.distanceTo(ufoGroup.position) > 1500) {
+      scene.remove(obj);
+      objects = objects.filter(o => o !== obj);
     }
-  } else { beamOn=false; beamTarget=null; }
+  });
+  if(objects.length < 20) spawn3DObject();
 }
 
-canvas.addEventListener('mousedown',e=>{ if(e.button===0) toggleBeam(); });
-canvas.addEventListener('touchstart',e=>{ toggleBeam(); e.preventDefault(); },{passive:false});
-canvas.addEventListener('mouseup',e=>{}); // beam stays until toggled off or missed
-
-document.addEventListener('keydown',e=>{
-  if(e.code==='Space'){ e.preventDefault(); toggleBeam(); }
-  if(e.code==='KeyU'){
-    upOpen=!upOpen;
-    let p=document.getElementById('upanel');
-    if(upOpen){ renderUpgrades(); p.style.display='block'; }
-    else p.style.display='none';
+function update3DBeam(dt) {
+  const raycaster = new THREE.Raycaster(ufoGroup.position, new THREE.Vector3(0,-1,0));
+  const intersects = raycaster.intersectObjects(objects, true);
+  const pipCh = document.getElementById('pip-ch');
+  if(intersects.length > 0) {
+    pipCh.style.background = 'rgba(255, 0, 0, 0.4)';
+    const target = intersects[0].object.parent; 
+    beamOn = true;
+    if(!beamTarget) { beamTarget = target; abductProg = 0; }
+    if(beamTarget === target) {
+      abductProg += (30 / (target.userData.weight||50)) * 40 * dt * (1 + upLvs.beam * 0.25);
+      if(abductProg >= 100) captureObject(target);
+    }
+  } else {
+    pipCh.style.background = 'none';
+    beamTarget = null; beamOn = false;
   }
-  // Keyboard movement fallback
-  let s=18;
-  if(e.code==='ArrowLeft') mx=Math.max(44,mx-s);
-  if(e.code==='ArrowRight') mx=Math.min(W-44,mx+s);
-  if(e.code==='ArrowUp') my=Math.max(30,my-s);
-  if(e.code==='ArrowDown') my=Math.min(GROUND_Y-44,my+s);
-});
+  beamMesh.visible = beamOn;
+}
 
-document.getElementById('upbtn').onclick=()=>{
-  upOpen=!upOpen;
-  let p=document.getElementById('upanel');
-  if(upOpen){ renderUpgrades(); p.style.display='block'; } else p.style.display='none';
-};
-document.getElementById('clo').onclick=()=>{ upOpen=false; document.getElementById('upanel').style.display='none'; };
-document.getElementById('stbtn').onclick=openMap;
-document.getElementById('zbtn').onclick=()=>toggleZukan();
-document.getElementById('zclo').onclick=()=>closeZukan();
-document.getElementById('cdcard-close').onclick=()=>{ document.getElementById('cdov').style.display='none'; };
+function captureObject(target) {
+  target.userData.captured = true;
+  scene.remove(target);
+  objects = objects.filter(o => o !== target);
+  captures++; stageCaptures++;
+  score += target.userData.score || 100;
+  addToCollection({type: target.userData.type, variantIdx: target.userData.variantIdx});
+  updateHUD();
+  checkStageClear();
+  beamOn = false;
+  addFM('+'+(target.userData.score||100)+'pt!', 0, 0, '#7ff0ff', 24);
+}
+
+function update3DAlerts(dt) {
+  if(beamOn) alertLv = Math.min(ALERT_MAX, alertLv + 10 * dt);
+  else alertLv = Math.max(0, alertLv - 4 * dt);
+  if(alertLv > 35 && police.length < 3) spawn3DPolice();
+  if(alertLv > 75 && military.length < 2) spawn3DMilitary();
+  police.forEach(p => {
+    const dir = ufoGroup.position.clone().sub(p.position).normalize();
+    p.position.add(dir.multiplyScalar(p.userData.speed * dt));
+    p.lookAt(ufoGroup.position);
+    p.userData.shootTmr -= dt;
+    if(p.userData.shootTmr <= 0 && p.position.distanceTo(ufoGroup.position) < 250) {
+      p.userData.shootTmr = 3; ufoHP -= 4; addFM('被弾！', 0,0, '#f00', 18);
+    }
+  });
+  military.forEach(m => {
+    const dir = ufoGroup.position.clone().sub(m.position).normalize();
+    m.position.add(dir.multiplyScalar(m.userData.speed * dt));
+    m.lookAt(ufoGroup.position);
+    const r = m.getObjectByName('rotor');
+    if(r) r.rotation.y += 0.9;
+    m.userData.shootTmr -= dt;
+    if(m.userData.shootTmr <= 0 && m.position.distanceTo(ufoGroup.position) < 350) {
+      m.userData.shootTmr = 2.2; ufoHP -= 10; addFM('ミサイル！', 0,0, '#f00', 22);
+    }
+  });
+}
+
+function onResize() {
+  const canvas = document.getElementById('c');
+  const W = window.innerWidth, H = window.innerHeight;
+  renderer.setSize(W, H);
+  camera.aspect = W/H;
+  camera.updateProjectionMatrix();
+}
+
+window.addEventListener('keydown', e => { keys[e.code] = true; if(e.code==='KeyU') toggleUpgrade(); if(e.code==='KeyZ') toggleZukan(); });
+window.addEventListener('keyup', e => keys[e.code] = false);
+window.addEventListener('mousemove', e => { mouse.vx = e.movementX || 0; });
+
+function startGame() {
+  state='playing'; score=0; captures=0; ufoHP=UFO_MAX_HP; alertLv=0; stageCaptures=0; 
+  objects.forEach(o=>scene.remove(o)); police.forEach(p=>scene.remove(p)); military.forEach(m=>scene.remove(m));
+  objects=[]; police=[]; military=[]; ufoGroup.position.set(0, 40, 0); ufoGroup.rotation.y = 0;
+  document.getElementById('ov').style.display='none'; document.getElementById('mov').style.display='none';
+  for(let i=0; i<10; i++) spawn3DObject();
+}
+function startLevel(idx) { curStageIdx = idx; startGame(); }
+function openMap() { state='map'; document.getElementById('mov').style.display='flex'; document.getElementById('ov').style.display='none'; if(typeof drawMap === 'function') drawMap(); }
+function checkGameOver() { if(ufoHP <= 0) { state = 'over'; document.getElementById('ov').style.display = 'flex'; document.getElementById('ov').innerHTML = `<h1>GAME OVER</h1><button class="btn" onclick="location.reload()">RELOAD</button>`; } }
+function checkStageClear() { const st = STAGES[curStageIdx]; if(stageCaptures >= st.goal) { state = 'clear'; document.getElementById('scov').style.display='flex'; document.getElementById('sc-stats').innerHTML=`捕獲: ${stageCaptures}/${st.goal} | スコア: ${score}`; if(curStageIdx === unlockedIdx && unlockedIdx < STAGES.length-1){ unlockedIdx++; localStorage.setItem('ufo_unlocked', unlockedIdx); } } }
 
 // ─── VARIANTS DATA ──────────────────────────────────────────────────
 var RARITY_COLORS={
@@ -1689,13 +1195,13 @@ var RARITY_WEIGHTS={common:40,uncommon:30,rare:18,epic:9,legendary:3};
 var VARIANTS={
   human:[
     {name:'大学生',       rarity:'common',   score:100, weight:68, threat:1,typeLabel:'人間',
-     desc:'授業をサボってスマホを見ていたところを発見。単位は宇宙人に持っていかれた。就活は晙噛。',shirt:'#3355aa',pants:'#334466',hair:'#4e2a10'},
+     desc:'授業をサボってスマホを見ていたところを発見。単位は宇宙人に持っていかれた。就活は困難を極める。',shirt:'#3355aa',pants:'#334466',hair:'#4e2a10'},
     {name:'会社員',       rarity:'common',   score:120, weight:74, threat:1,typeLabel:'人間',
-     desc:'残業中に空を見上げたら不思議な光が。「これで明日も遅刻できる」と嘴をいった。',shirt:'#333355',pants:'#222244',hair:'#181818'},
+     desc:'残業中に空を見上げたら不思議な光が。「これで明日も遅刻できる」と感謝の言葉を漏らした。',shirt:'#333355',pants:'#222244',hair:'#181818'},
     {name:'公務員',       rarity:'uncommon', score:150, weight:76, threat:2,typeLabel:'人間',
      desc:'有給休暇の消化中に連れ去られる。キャッチの申請書は宇宙でも必要か？',shirt:'#445544',pants:'#334433',hair:'#3a2505'},
     {name:'交通整理員',   rarity:'uncommon', score:130, weight:78, threat:1,typeLabel:'人間',
-     desc:'赤い誠導棒でビームを止めようとしたが無効だった。宇宙でも道路工事は続く。',shirt:'#ff6600',pants:'#2a2a2a',hair:'#222211'},
+     desc:'赤い誘導棒でビームを止めようとしたが無効だった。宇宙でも道路工事は続く。',shirt:'#ff6600',pants:'#2a2a2a',hair:'#222211'},
     {name:'銀行マン',      rarity:'rare',     score:220, weight:80, threat:2,typeLabel:'人間',
      desc:'金融取引の最中に連行。宇宙でも株価が気になるらしく常にソワソワしている。',shirt:'#112244',pants:'#111133',hair:'#111'},
     {name:'サッカー選手',  rarity:'rare',     score:250, weight:75, threat:3,typeLabel:'人間',
@@ -1705,83 +1211,83 @@ var VARIANTS={
     {name:'大統領',       rarity:'legendary',score:1200,weight:88, threat:5,typeLabel:'人間',
      desc:'世界最高権力者。核のボタンを持っていたが宇宙では使えない。支持率ゼロ。',shirt:'#1a1a6a',pants:'#110044',hair:'#ccc'},
     {name:'農家',         rarity:'common',   score:110, weight:82, threat:1,typeLabel:'人間',
-     desc:'早朝に田んぼを見回っていたところを発見。「また米が不作か」と思った。',shirt:'#884422',pants:'#5a3d1a',hair:'#5a3010'},
+     desc:'早朝に田んぼを見回っていたところを発見。「また今年も米が不作か」と思った。',shirt:'#884422',pants:'#5a3d1a',hair:'#5a3010'},
     {name:'消防士',       rarity:'rare',     score:230, weight:90, threat:3,typeLabel:'人間',
-     desc:'出動中に連れ去られた。「これは宇宙的な火事だ」と本職意識を発揮。',shirt:'#cc3300',pants:'#882200',hair:'#3a2010'},
+     desc:'出動中に連れ去られた。「これは次元の違う火事だ」と本職意識を発揮。',shirt:'#cc3300',pants:'#882200',hair:'#3a2010'},
   ],
   cow:[
     {name:'ホルスタイン',    rarity:'common',   score:300, weight:600,threat:1,typeLabel:'牛',
-     desc:'世界で最も一般的な牛。UFOから見ても特に目立たない。牙をはんでいるだけ。'},
+     desc:'世界で最も一般的な牛。UFOから見ても特に目立たない。草をはいでいるだけ。'},
     {name:'和牛 A5等級', rarity:'epic',     score:1800,weight:550,threat:2,typeLabel:'牛',
-     desc:'霜降りの入りた後まといた橋杯横の山様。100g数万円。宇宙大國でも希少価値。'},
+     desc:'見事な霜降りの入った、農場の王様。100g数万円。宇宙レベルでも希少価値。'},
     {name:'闘牛 エルトロ',rarity:'rare',     score:700, weight:650,threat:5,typeLabel:'牛',
-     desc:'スペイン時代から闘い続けた闘妗盛な牛。ビームに较いたない。'},
+     desc:'スペイン時代から闘い続けた闘志旺盛な牛。ビームに対しても動じない。'},
     {name:'ジャージー種',    rarity:'uncommon', score:450, weight:520,threat:2,typeLabel:'牛',
-     desc:'金色の毛色が美しいイギリス系牛。高脂肪牛乳で有名。寄りのある山様。'},
+     desc:'金色の毛色が美しいイギリス系牛。高脂肪牛乳で有名。品格のある佇まい。'},
   ],
   car:[
     {name:'トヨタ カローラ',   rarity:'common',   score:500, weight:1250,threat:0,typeLabel:'車',
      desc:'世界一売れた乗用車。UFOから見ても特に目立たないが吸い上げてみた。造りはいい。',bodyCol:'#cc3322'},
     {name:'ホンダ シビック',   rarity:'common',   score:520, weight:1200,threat:0,typeLabel:'車',
-     desc:'街でよく見かける一台。ドライバーはちょうど両切り中だった。',bodyCol:'#446699'},
+     desc:'街でよく見かける一台。ドライバーはちょうど休憩中だった。',bodyCol:'#446699'},
     {name:'ランドクルーザー', rarity:'uncommon', score:900, weight:2300,threat:1,typeLabel:'車',
      desc:'悪路もOKなSUVも宇宙には勝てなかった。四駆は宇宙でどう使う？',bodyCol:'#336633'},
     {name:'VW ゴルフ',       rarity:'uncommon', score:700, weight:1400,threat:0,typeLabel:'車',
-     desc:'ドイツの国民車。安全性は高いが宇宙店行には類のない状況。',bodyCol:'#888'},
+     desc:'ドイツの国民車。安全性は高いが宇宙旅行には想定外の状況。',bodyCol:'#888'},
     {name:'BMW M3',           rarity:'rare',     score:1400,weight:1580,threat:1,typeLabel:'車',
      desc:'アウトバーンもUFOビームも止められなかった。プロペラエンブレムが宇宙で回る。',bodyCol:'#111166'},
     {name:'ポルシェ 911',    rarity:'rare',     score:1800,weight:1430,threat:1,typeLabel:'車',
-     desc:'最高時連318km。しかしUFOのビームは光速の1/10。追いつけなかった。',bodyCol:'#eee'},
+     desc:'最高時速318km。しかしUFOのビームは光速の1/10。逃げられなかった。',bodyCol:'#eee'},
     {name:'フェラーリ F40',  rarity:'epic',     score:3000,weight:1100,threat:1,typeLabel:'車',
      desc:'赤の悪魔も宇宙人の前には無力。工場出荷価格より銀河での相場の方が安いかも。',bodyCol:'#cc0000'},
     {name:'ランボルギーニ',  rarity:'epic',     score:3500,weight:1575,threat:1,typeLabel:'車',
      desc:'ドアが上に開く車も上には行けなかった。UFOと比べると…まあ似たような形？',bodyCol:'#ffaa00'},
     {name:'ベントレー', rarity:'epic',     score:3200,weight:2244,threat:1,typeLabel:'車',
-     desc:'英国王室御用達の高級車。宇宙でもお茶と絅茶のサービスを要求された。',bodyCol:'#223388'},
+     desc:'英国王室御用達の高級車。宇宙でもアフタヌーンティーのサービスを要求された。',bodyCol:'#223388'},
     {name:'テスラ サイバー', rarity:'legendary',score:6000,weight:2900,threat:2,typeLabel:'車',
-     desc:'鈷鑄の未来車。ビームを弾く可能性があったが結局連れ去られた。充電さえできれば。',bodyCol:'#ccc'},
+     desc:'ステンレスの未来車。ビームを弾く可能性があったが結局連れ去られた。',bodyCol:'#ccc'},
   ],
   pig:[
     {name:'三元豚',       rarity:'common',   score:150, weight:100,threat:1,typeLabel:'豚',
-     desc:'日本の内芹豚の主流。霧降りの更素などで脚元の芹が愛い。'},
+     desc:'日本の食肉用豚の主流。霜降りの具合が良く、足元の仕草が愛らしい。'},
     {name:'イベリコ豚',    rarity:'epic',     score:2000,weight:120,threat:2,typeLabel:'豚',
-     desc:'スペイン産ドングリ豚。言い値100万円超。宇宙でもトップクラス。'},
+     desc:'スペイン産ドングリ豚。言い値100万円超。宇宙でもトップクラスの人気。'},
     {name:'黒豚',         rarity:'rare',     score:600, weight:110,threat:2,typeLabel:'豚',
-     desc:'日本最古の飼豚文化を持つ山の豚。山の饿慧を知る自由豚。'},
+     desc:'日本最古の飼育文化を持つ山の豚。山の知恵を知る自由豚。'},
   ],
   chicken:[
     {name:'ニワトリ',      rarity:'common',   score:50,  weight:2,  threat:0,typeLabel:'鶏',
-     desc:'世界中に200億羽いる電波届のない辜。宇宙長旅に出たが当惑中。'},
+     desc:'世界中に200億羽いる電波の届かない幸。宇宙の旅に出たが当惑中。'},
     {name:'地鶏',        rarity:'rare',     score:400, weight:3,  threat:1,typeLabel:'鶏',
-     desc:'希少価値の鶏。宇宙では不死の身を得たかも。'},
+     desc:'希少価値の鶏。宇宙では不死の身を得たかもしれない。'},
     {name:'鵬鶏',        rarity:'legendary',score:3000,weight:4,  threat:1,typeLabel:'鶏',
-     desc:'公認の世界一の鶏。後に世界ニュースはトップ吹いた。'},
+     desc:'公認の世界一の鶏。そのニュースは世界中に衝撃を与えた。'},
   ],
   truck:[
     {name:'普通トラック',    rarity:'common',   score:800, weight:3000,threat:0,typeLabel:'トラック',
-     desc:'物流の血液。365日走り続けるが今日は宇宙へ起路。'},
-    {name:'冷凍车',       rarity:'uncommon', score:1200,weight:3200,threat:0,typeLabel:'トラック',
-     desc:'冷凍车に載れた莅肉も一繎に吸い上げられた。宇宙でアイスが解ける？'},
+     desc:'物流の血液。365日走り続けるが今日は宇宙へ寄り道。'},
+    {name:'冷凍車',       rarity:'uncommon', score:1200,weight:3200,threat:0,typeLabel:'トラック',
+     desc:'冷凍車に載った精肉も一瞬で吸い上げられた。宇宙でアイスは解けるか？'},
     {name:'危険物輸送',   rarity:'epic',     score:4000,weight:4000,threat:3,typeLabel:'トラック',
-     desc:'「尞炎性」辺り。宇宙では放射が和安がった。'},
+     desc:'「引火性」パネル。宇宙空間では爆発もまた芸術的。'},
   ],
   sheep:[
     {name:'メリノ羊',      rarity:'common',   score:120, weight:80, threat:1,typeLabel:'羊',
-     desc:'超高級ウールの羊。宇宙から見ると雲のよう。吸い上げると特緊の穀が出た。'},
-    {name:'山岳玿羊',    rarity:'uncommon', score:300, weight:90, threat:1,typeLabel:'羊',
-     desc:'山批に問わざ趣味。勇気よく厉馨な山を駆けていたが宇宙では更小山か。'},
+     desc:'超高級ウールの羊。宇宙から見ると雲のよう。吸い上げると極上の穀物が出た。'},
+    {name:'山岳羊',    rarity:'uncommon', score:300, weight:90, threat:1,typeLabel:'羊',
+     desc:'山登りが趣味。勇気よく険しい山を駆けていたが宇宙ではどうだ。'},
     {name:'黄金の羊',    rarity:'legendary',score:5000,weight:75, threat:2,typeLabel:'羊',
-     desc:'ギリシャ神話に登場する黄金の毛を持つ缏者の羊。傳説の希少動物。'},
+     desc:'伝説の黄金の毛を持つ賢者の羊。ギリシャ神話に登場する希少動物。'},
   ],
   dog:[
     {name:'柴犬',         rarity:'common',   score:80,  weight:12, threat:1,typeLabel:'犬',
-     desc:'日本まれの直立耳。寻記能強いが宇宙まで追ってはこなかった。'},
+     desc:'日本生まれの直立耳。忠誠心が強いが宇宙までは追ってこなかった。'},
     {name:'秋田犬',       rarity:'uncommon', score:200, weight:34, threat:2,typeLabel:'犬',
-     desc:'日本の治安の犬。借けないカリスマが高屈1だったが宇宙人には通じなかった。'},
+     desc:'日本の誇る忠犬。孤高のカリスマ性が人気だが宇宙人には通じなかった。'},
     {name:'チワワ',         rarity:'common',   score:60,  weight:3,  threat:0,typeLabel:'犬',
-     desc:'世界最小の犬種。ビームの前でプルプル震えていたが大山の脶法験だった。'},
+     desc:'世界最小の犬種。ビームの前で震えていたが、魔法のような体験だったはず。'},
     {name:'グレートデーン', rarity:'rare',     score:400, weight:68, threat:2,typeLabel:'犬',
-     desc:'世界最大級の犬。立つと人と同じ身長。宇宙でもデカい。'},
+     desc:'世界最大級の犬。立ち上がると人間と同じ身長。宇宙でもデカい。'},
   ],
 };
 
@@ -1970,10 +1476,8 @@ function showCardDetail(entry){
 })();
 
 // ─── Init ──────────────────────────────────────────────────────────
-initStars();
 totalVariants=Object.values(VARIANTS).reduce((a,v)=>a+v.length,0);
-mx=W/2; my=H*.25;
-requestAnimationFrame(loop);
+// init3D() and animate() are called above.
 </script>
 </body>
 </html>
