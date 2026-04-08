@@ -6,7 +6,11 @@
     <title>UFO Abductor - Enhanced</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        body {
+            overflow: hidden; background: #000; font-family: 'Courier New', monospace;
+            user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;
+            -webkit-touch-callout: none;
+        }
         canvas { display: block; }
 
         #ui-container {
@@ -27,12 +31,13 @@
         }
 
         #sub-window-frame {
-            position: absolute; bottom: 20px; right: 20px;
+            position: absolute; top: 20px; right: 20px;
             width: 200px; height: 200px;
             border: 2px solid #00ff8844;
             border-radius: 50%;
             box-shadow: 0 0 0 1px #00ff8822, 0 0 20px #00ff8833, inset 0 0 20px #00000066;
-            overflow: hidden; pointer-events: none; background: #000511;
+            overflow: hidden; pointer-events: none;
+            background: #000000;
         }
 
         #crosshair {
@@ -55,7 +60,7 @@
         }
 
         #controls {
-            position: absolute; bottom: 30px; left: 20px;
+            position: absolute; bottom: 30px; right: 20px;
             display: flex; gap: 16px; pointer-events: auto;
         }
 
@@ -79,7 +84,7 @@
         }
 
         #encyclopedia-btn {
-            position: absolute; top: 20px; right: 20px;
+            position: absolute; top: 230px; right: 20px;
             padding: 10px 20px;
             background: rgba(0,0,0,0.7);
             color: #00ff88;
@@ -153,6 +158,32 @@
             color: #00ff8855; font-size: 11px;
             letter-spacing: 1px; line-height: 1.8;
         }
+
+        /* バーチャルスティック */
+        #virtual-stick-container {
+            display: none;
+            position: absolute; bottom: 30px; left: 20px;
+            pointer-events: auto;
+        }
+        #stick-base {
+            width: 110px; height: 110px;
+            background: radial-gradient(circle, rgba(0,255,136,0.08) 0%, rgba(0,255,136,0.02) 100%);
+            border: 2px solid rgba(0,255,136,0.35);
+            border-radius: 50%;
+            position: relative;
+            touch-action: none;
+        }
+        #stick-knob {
+            width: 46px; height: 46px;
+            background: radial-gradient(circle, rgba(0,255,136,0.55) 0%, rgba(0,255,136,0.25) 100%);
+            border: 2px solid #00ff88;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 12px #00ff8866;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -177,6 +208,13 @@
     <div id="controls-hint">
         WASD / 矢印キー: 移動<br>
         SPACE / ABDUCTボタン: 吸い込み
+    </div>
+
+    <!-- バーチャルスティック（iPhone用） -->
+    <div id="virtual-stick-container">
+        <div id="stick-base">
+            <div id="stick-knob"></div>
+        </div>
     </div>
 
     <div id="notification">+100</div>
@@ -464,7 +502,7 @@ window.addEventListener('load', () => {
     beamGroup.add(beamOuter, beamInner);
     scene.add(beamGroup);
 
-    ufo.position.y = 32;
+    ufo.position.y = 42;  // 32→42に上げる
     scene.add(ufo);
 
     // ===== TARGET CREATION (詳細モデル) =====
@@ -651,6 +689,69 @@ window.addEventListener('load', () => {
         addTarget(type, Math.cos(a)*r, Math.sin(a)*r);
     }
 
+    // ===== コピペ・コンテキストメニュー防止 =====
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('copy', e => e.preventDefault());
+    document.addEventListener('cut', e => e.preventDefault());
+    document.addEventListener('selectstart', e => e.preventDefault());
+
+    // ===== iPhone/タッチデバイス判定 =====
+    const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    const stickContainer = document.getElementById('virtual-stick-container');
+    const stickBase = document.getElementById('stick-base');
+    const stickKnob = document.getElementById('stick-knob');
+    const hintEl = document.getElementById('controls-hint');
+
+    if (isTouchDevice) {
+        stickContainer.style.display = 'block';
+        hintEl.style.display = 'none';
+    }
+
+    // バーチャルスティック状態
+    const vStick = { x: 0, y: 0, active: false, id: null };
+    const baseR = 55; // 半径
+
+    function getStickPos(touch) {
+        const rect = stickBase.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        let dx = touch.clientX - cx;
+        let dy = touch.clientY - cy;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist > baseR) { dx = dx/dist*baseR; dy = dy/dist*baseR; }
+        return { dx, dy };
+    }
+
+    stickBase.addEventListener('touchstart', e => {
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        vStick.id = t.identifier;
+        vStick.active = true;
+        const {dx, dy} = getStickPos(t);
+        vStick.x = dx / baseR;
+        vStick.y = dy / baseR;
+        stickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    }, { passive: false });
+
+    stickBase.addEventListener('touchmove', e => {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+            if (t.identifier === vStick.id) {
+                const {dx, dy} = getStickPos(t);
+                vStick.x = dx / baseR;
+                vStick.y = dy / baseR;
+                stickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            }
+        }
+    }, { passive: false });
+
+    const resetStick = () => {
+        vStick.x = 0; vStick.y = 0; vStick.active = false; vStick.id = null;
+        stickKnob.style.transform = 'translate(-50%, -50%)';
+    };
+    stickBase.addEventListener('touchend', e => { e.preventDefault(); resetStick(); }, { passive: false });
+    stickBase.addEventListener('touchcancel', e => { e.preventDefault(); resetStick(); }, { passive: false });
+
     // ===== INPUT =====
     window.addEventListener('keydown', e => keys[e.code] = true);
     window.addEventListener('keyup', e => keys[e.code] = false);
@@ -684,9 +785,14 @@ window.addEventListener('load', () => {
         if(keys['KeyS'] || keys['ArrowDown'])  ufo.position.z += ufoSpeed;
         if(keys['KeyA'] || keys['ArrowLeft'])  ufo.position.x -= ufoSpeed;
         if(keys['KeyD'] || keys['ArrowRight']) ufo.position.x += ufoSpeed;
+        // バーチャルスティック
+        if(vStick.active) {
+            ufo.position.x += vStick.x * ufoSpeed;
+            ufo.position.z += vStick.y * ufoSpeed;
+        }
 
         // UFOの浮遊
-        ufo.position.y = 32 + Math.sin(time * 0.8) * 1.2;
+        ufo.position.y = 42 + Math.sin(time * 0.8) * 1.2;  // 高度を上げる
         ufo.rotation.y = time * 0.3;
 
         // アンテナ赤点滅
@@ -694,10 +800,15 @@ window.addEventListener('load', () => {
 
         // ライト同期
         spotLight.position.copy(ufo.position);
-        lightTarget.position.set(ufo.position.x, 0, ufo.position.z);
+        // 照射点を画面中央寄り（少しUFOの位置に近づける）
+        lightTarget.position.set(
+            ufo.position.x * 0.6,
+            0,
+            ufo.position.z * 0.6
+        );
         ufoPointLight.position.copy(ufo.position);
 
-        beamGroup.position.set(ufo.position.x, ufo.position.y - 26, ufo.position.z);
+        beamGroup.position.set(ufo.position.x, ufo.position.y - 34, ufo.position.z);
 
         // LED色サイクル
         const active = isAbducting || keys['Space'];
@@ -799,15 +910,19 @@ window.addEventListener('load', () => {
         renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
         renderer.render(scene, camera);
 
-        // サブウィンドウ（円形クリップはCSS）
+        // サブウィンドウ（右上）
         const sw = 200, sh = 200;
         const sx = window.innerWidth - sw - 20;
-        const sy = 20;
+        const sy = window.innerHeight - sh - 20;  // WebGL座標は下から計算、right-top = innerHeight-sh-20
+        const syFromTop = 20;  // CSS上は20px
+        const syGL = window.innerHeight - syFromTop - sh;
         renderer.setScissorTest(true);
-        renderer.setScissor(sx, sy, sw, sh);
-        renderer.setViewport(sx, sy, sw, sh);
-        renderer.clearDepth();
+        renderer.setScissor(sx, syGL, sw, sh);
+        renderer.setViewport(sx, syGL, sw, sh);
+        renderer.setClearColor(0x000000, 1);
+        renderer.clear();
         renderer.render(scene, subCamera);
+        renderer.setClearColor(0x000814, 1);
         renderer.setScissorTest(false);
     }
 
