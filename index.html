@@ -308,6 +308,34 @@ function getMat(color, roughness=0.9, metalness=0.0) {
     return matCache.get(key);
 }
 
+// ============================================================
+// InstancedMesh 共有リソース（チャンク生成コストを大幅削減）
+// ============================================================
+const _sharedBlockGeo = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+const _sharedWaterGeo = new THREE.PlaneGeometry(BLOCK_SIZE, BLOCK_SIZE);
+const _sharedWaterMat = new THREE.MeshStandardMaterial({color:0x0e2e55,transparent:true,opacity:0.8,roughness:0.05,metalness:0.4});
+const _instDummy = new THREE.Object3D(); // 行列計算用の使い回しオブジェクト
+
+// 木・草の共有ジオメトリ（スケールは instance matrix で対応）
+const _treeTrunkGeo    = new THREE.CylinderGeometry(0.25, 0.4, 3, 8);
+const _deciduousLeafGeos = [
+    new THREE.ConeGeometry(2.8, 4,   8),
+    new THREE.ConeGeometry(2.2, 3.5, 8),
+    new THREE.ConeGeometry(1.4, 3,   8),
+];
+const _deciduousLeafYs   = [3.5, 5.5, 7.5];
+const _pineLeafGeos = [
+    new THREE.ConeGeometry(2.2, 3,   8),
+    new THREE.ConeGeometry(1.7, 3.3, 8),
+    new THREE.ConeGeometry(1.2, 3.6, 8),
+];
+const _pineLeafYs = [3, 5, 7];
+const _bushGeo = new THREE.SphereGeometry(1, 8, 6); // scale で大きさ調整
+
+// Apache 用 事前割り当て色（毎フレームの new THREE.Color() を排除）
+const _apacheHitColor  = new THREE.Color(0xff2200);
+const _apacheBaseColor = new THREE.Color(0x000000);
+
 function getChunkKey(cx, cz) { return `${cx},${cz}`; }
 function worldToChunk(wx, wz) {
     return { cx: Math.floor(wx/CHUNK_SIZE), cz: Math.floor(wz/CHUNK_SIZE) };
@@ -342,20 +370,30 @@ function addRoads(group, biome) {
         group.add(sw);
     });
 
-    // Center line dashes (horizontal road)
+    // Center line dashes — InstancedMesh（16 Mesh → 2 InstancedMesh）
+    const dashGeoH = new THREE.PlaneGeometry(4, 0.25);
+    const dashInstH = new THREE.InstancedMesh(dashGeoH, laneMarkMat, 8);
     for(let i=0; i<8; i++) {
-        const dash = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.25), laneMarkMat);
-        dash.rotation.x = -Math.PI/2;
-        dash.position.set(i*8+4, 0.08, halfCS);
-        group.add(dash);
+        _instDummy.position.set(i*8+4, 0.08, halfCS);
+        _instDummy.rotation.set(-Math.PI/2, 0, 0);
+        _instDummy.scale.setScalar(1);
+        _instDummy.updateMatrix();
+        dashInstH.setMatrixAt(i, _instDummy.matrix);
     }
-    // Center line dashes (vertical road)
+    dashInstH.instanceMatrix.needsUpdate = true;
+    group.add(dashInstH);
+
+    const dashGeoV = new THREE.PlaneGeometry(0.25, 4);
+    const dashInstV = new THREE.InstancedMesh(dashGeoV, laneMarkMat, 8);
     for(let i=0; i<8; i++) {
-        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 4), laneMarkMat);
-        dash.rotation.x = -Math.PI/2;
-        dash.position.set(halfCS, 0.08, i*8+4);
-        group.add(dash);
+        _instDummy.position.set(halfCS, 0.08, i*8+4);
+        _instDummy.rotation.set(-Math.PI/2, 0, 0);
+        _instDummy.scale.setScalar(1);
+        _instDummy.updateMatrix();
+        dashInstV.setMatrixAt(i, _instDummy.matrix);
     }
+    dashInstV.instanceMatrix.needsUpdate = true;
+    group.add(dashInstV);
 
     // Street lamps — visual only, no PointLights (perf)
     const lampPostMat2 = getMat(0x444450, 0.6);
@@ -379,7 +417,12 @@ function buildChunk(cx, cz) {
     const group = new THREE.Group();
     group.position.set(cx*CHUNK_SIZE, 0, cz*CHUNK_SIZE);
 
-    const blockGeo = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+    // ============================================================
+    // 地形ブロック & 水面: InstancedMesh でバッチ化
+    // Before: 64 個の Mesh   After: 2〜4 個の InstancedMesh
+    // ============================================================
+    const blockInstances = new Map(); // color → [{x, y, z}]
+    const waterPositions  = [];
 
     for(let bx=0; bx<BLOCKS_PER_CHUNK; bx++) {
         for(let bz=0; bz<BLOCKS_PER_CHUNK; bz++) {
@@ -388,27 +431,51 @@ function buildChunk(cx, cz) {
             const biome = getBiome(wx, wz);
             const colors = BIOME_COLORS[biome];
             const col = colors[(bx+bz)%2];
-            const mat = getMat(col);
 
             const h = biome===BIOME.MOUNTAIN ? (fbm(wx*0.05,wz*0.05)+0.5)*12 :
                        biome===BIOME.OCEAN   ? -4 :
                        biome===BIOME.RIVER   ? -1 : 0;
 
-            const block = new THREE.Mesh(blockGeo, mat);
-            block.position.set(bx*BLOCK_SIZE + BLOCK_SIZE/2, h - BLOCK_SIZE/2, bz*BLOCK_SIZE + BLOCK_SIZE/2);
-            block.receiveShadow = false;
-            group.add(block);
+            if(!blockInstances.has(col)) blockInstances.set(col, []);
+            blockInstances.get(col).push({
+                x: bx*BLOCK_SIZE + BLOCK_SIZE/2,
+                y: h - BLOCK_SIZE/2,
+                z: bz*BLOCK_SIZE + BLOCK_SIZE/2
+            });
 
             if(biome===BIOME.OCEAN || biome===BIOME.RIVER) {
-                const waterMesh = new THREE.Mesh(
-                    new THREE.PlaneGeometry(BLOCK_SIZE, BLOCK_SIZE),
-                    new THREE.MeshStandardMaterial({color:0x0e2e55,transparent:true,opacity:0.8,roughness:0.05,metalness:0.4})
-                );
-                waterMesh.rotation.x = -Math.PI/2;
-                waterMesh.position.set(bx*BLOCK_SIZE+BLOCK_SIZE/2, 0.1, bz*BLOCK_SIZE+BLOCK_SIZE/2);
-                group.add(waterMesh);
+                waterPositions.push({x: bx*BLOCK_SIZE+BLOCK_SIZE/2, z: bz*BLOCK_SIZE+BLOCK_SIZE/2});
             }
         }
+    }
+
+    // 色ごとに InstancedMesh を1つ生成
+    for(const [col, positions] of blockInstances) {
+        const inst = new THREE.InstancedMesh(_sharedBlockGeo, getMat(col), positions.length);
+        inst.receiveShadow = false;
+        positions.forEach((p, i) => {
+            _instDummy.position.set(p.x, p.y, p.z);
+            _instDummy.rotation.set(0, 0, 0);
+            _instDummy.scale.setScalar(1);
+            _instDummy.updateMatrix();
+            inst.setMatrixAt(i, _instDummy.matrix);
+        });
+        inst.instanceMatrix.needsUpdate = true;
+        group.add(inst);
+    }
+
+    // 水面を InstancedMesh で一括描画
+    if(waterPositions.length > 0) {
+        const waterInst = new THREE.InstancedMesh(_sharedWaterGeo, _sharedWaterMat, waterPositions.length);
+        waterPositions.forEach((p, i) => {
+            _instDummy.position.set(p.x, 0.1, p.z);
+            _instDummy.rotation.set(-Math.PI/2, 0, 0);
+            _instDummy.scale.setScalar(1);
+            _instDummy.updateMatrix();
+            waterInst.setMatrixAt(i, _instDummy.matrix);
+        });
+        waterInst.instanceMatrix.needsUpdate = true;
+        group.add(waterInst);
     }
 
     // ---- Roads for urban biomes ----
@@ -464,23 +531,99 @@ function spawnBiomeObjects(group, cx, cz) {
         [BIOME.RIVER]:      0,
     }[biome] || 0;
 
+    // バッチ収集用配列
+    const deciduousBatch = []; // {x, z, scale, rotY}
+    const pineBatch      = [];
+    const bushBatch      = []; // {x, z, scale, col}
+
     for(let i=0; i<spawnCount; i++) {
         const lx = rng() * (CHUNK_SIZE-8) + 4;
         const lz = rng() * (CHUNK_SIZE-8) + 4;
-        placeDecoration(group, biome, lx, lz, rng);
+        placeDecoration(group, biome, lx, lz, rng, deciduousBatch, pineBatch, bushBatch);
+    }
+
+    // ---- 木・草を InstancedMesh でバッチ描画 ----
+    _batchTrees(group, deciduousBatch, 'deciduous');
+    _batchTrees(group, pineBatch,      'pine');
+    _batchBushes(group, bushBatch);
+}
+
+// 木のバッチ描画ヘルパー
+function _batchTrees(group, batch, type) {
+    if(batch.length === 0) return;
+    const leafGeos = type === 'pine' ? _pineLeafGeos : _deciduousLeafGeos;
+    const leafYs   = type === 'pine' ? _pineLeafYs   : _deciduousLeafYs;
+    const leafMat  = type === 'pine'
+        ? getMat(0x0d4015, 0.8)
+        : null; // deciduous は3色
+
+    // Trunk（全木共通）
+    const trunkInst = new THREE.InstancedMesh(_treeTrunkGeo, getMat(0x3d2b1a, 0.9), batch.length);
+    batch.forEach((t, i) => {
+        _instDummy.position.set(t.x, 1.5*t.scale, t.z);
+        _instDummy.rotation.set(0, t.rotY, 0);
+        _instDummy.scale.setScalar(t.scale);
+        _instDummy.updateMatrix();
+        trunkInst.setMatrixAt(i, _instDummy.matrix);
+    });
+    trunkInst.instanceMatrix.needsUpdate = true;
+    group.add(trunkInst);
+
+    // Leaf layers
+    const leafColors = [0x0d3d12, 0x0a2e0d, 0x144d18];
+    leafGeos.forEach((geo, li) => {
+        const mat = type === 'pine' ? leafMat : getMat(leafColors[li], 0.8);
+        const leafInst = new THREE.InstancedMesh(geo, mat, batch.length);
+        batch.forEach((t, i) => {
+            _instDummy.position.set(t.x, leafYs[li]*t.scale, t.z);
+            _instDummy.rotation.set(0, t.rotY, 0);
+            _instDummy.scale.setScalar(t.scale);
+            _instDummy.updateMatrix();
+            leafInst.setMatrixAt(i, _instDummy.matrix);
+        });
+        leafInst.instanceMatrix.needsUpdate = true;
+        group.add(leafInst);
+    });
+}
+
+// 草のバッチ描画ヘルパー
+function _batchBushes(group, batch) {
+    if(batch.length === 0) return;
+    // 色ごとにグループ化
+    const byColor = new Map();
+    batch.forEach(b => {
+        if(!byColor.has(b.col)) byColor.set(b.col, []);
+        byColor.get(b.col).push(b);
+    });
+    for(const [col, items] of byColor) {
+        const inst = new THREE.InstancedMesh(_bushGeo, getMat(col, 0.9), items.length);
+        items.forEach((b, i) => {
+            _instDummy.position.set(b.x, b.scale, b.z);
+            _instDummy.rotation.set(0, 0, 0);
+            _instDummy.scale.setScalar(b.scale);
+            _instDummy.updateMatrix();
+            inst.setMatrixAt(i, _instDummy.matrix);
+        });
+        inst.instanceMatrix.needsUpdate = true;
+        group.add(inst);
     }
 }
 
-function placeDecoration(group, biome, lx, lz, rng) {
-    if(biome===BIOME.FOREST || biome===BIOME.MOUNTAIN) {
-        const scale = 0.7 + rng()*0.8;
-        const treeGroup = makeTree(scale, biome===BIOME.MOUNTAIN ? 'pine' : 'deciduous');
-        treeGroup.position.set(lx, 0, lz);
-        group.add(treeGroup);
+function placeDecoration(group, biome, lx, lz, rng, deciduousBatch, pineBatch, bushBatch) {
+    if(biome===BIOME.FOREST) {
+        // InstancedMesh バッチへ追加
+        deciduousBatch.push({x:lx, z:lz, scale:0.7+rng()*0.8, rotY:rng()*Math.PI*2});
+    } else if(biome===BIOME.MOUNTAIN) {
+        pineBatch.push({x:lx, z:lz, scale:0.7+rng()*0.8, rotY:rng()*Math.PI*2});
     } else if(biome===BIOME.GRASSLAND) {
         const r = rng();
-        if(r < 0.6) { const t = makeTree(0.5+rng()*0.4); t.position.set(lx,0,lz); group.add(t); }
-        else { const b = makeBush(rng); b.position.set(lx,0,lz); group.add(b); }
+        if(r < 0.6) {
+            deciduousBatch.push({x:lx, z:lz, scale:0.5+rng()*0.4, rotY:rng()*Math.PI*2});
+        } else {
+            const s = 0.4+rng()*0.5;
+            const col = [0x0e3a08, 0x123d0c, 0x0a2e06][Math.floor(rng()*3)];
+            bushBatch.push({x:lx, z:lz, scale:s, col});
+        }
     } else if(biome===BIOME.FARMLAND) {
         const t = Math.floor(rng()*3);
         if(t===0) { const f=makeFarmField(); f.position.set(lx,0.1,lz); group.add(f); }
@@ -491,9 +634,8 @@ function placeDecoration(group, biome, lx, lz, rng) {
         house.position.set(lx, 0, lz);
         house.rotation.y = Math.floor(rng()*4)*Math.PI/2;
         group.add(house);
-        const tree = makeTree(0.6);
-        tree.position.set(lx+4, 0, lz+4);
-        group.add(tree);
+        // 庭の木もバッチへ
+        deciduousBatch.push({x:lx+4, z:lz+4, scale:0.6, rotY:rng()*Math.PI*2});
     } else if(biome===BIOME.URBAN) {
         const h = 20 + rng()*60;
         const w = 8 + rng()*14;
@@ -2018,11 +2160,11 @@ function animate() {
         if(ap.flashTimer > 0){
             ap.flashTimer -= delta;
             ap.mesh.traverse(child=>{
-                if(child.isMesh && child.material) child.material.emissive = new THREE.Color(0xff2200);
+                if(child.isMesh && child.material) child.material.emissive.copy(_apacheHitColor);
             });
         } else {
             ap.mesh.traverse(child=>{
-                if(child.isMesh && child.material) child.material.emissive = new THREE.Color(0x000000);
+                if(child.isMesh && child.material) child.material.emissive.copy(_apacheBaseColor);
             });
         }
 
