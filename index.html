@@ -256,7 +256,8 @@ renderer.autoClear = false;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.8;
+renderer.toneMappingExposure = 2.2;
+renderer.physicallyCorrectLights = true;
 document.body.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 800);
@@ -571,44 +572,125 @@ function makeChimney() {
 // UFO
 // ======================================================
 const ufo = new THREE.Group();
-const bodyMat = new THREE.MeshStandardMaterial({color:0x999aaa,metalness:0.7,roughness:0.2});
+// UFO本体 — emissiveで自発光
+const bodyMat = new THREE.MeshStandardMaterial({color:0xaabbcc,metalness:0.8,roughness:0.15,emissive:0x112233,emissiveIntensity:0.6});
 const ufoBody = new THREE.Mesh(new THREE.CylinderGeometry(4.5,6.5,1.8,32), bodyMat);
 ufoBody.castShadow = true; ufo.add(ufoBody);
-const ringMat = new THREE.MeshStandardMaterial({color:0xaaaacc,metalness:0.8,roughness:0.15});
-const ufoRing = new THREE.Mesh(new THREE.TorusGeometry(5.5,0.4,8,32), ringMat);
+
+// 光るリング（底面エッジ）
+const ringMat = new THREE.MeshStandardMaterial({color:0x88ffee,metalness:0.9,roughness:0.05,emissive:0x00ffcc,emissiveIntensity:1.5});
+const ufoRing = new THREE.Mesh(new THREE.TorusGeometry(5.5,0.45,10,48), ringMat);
 ufoRing.position.y = -0.3; ufo.add(ufoRing);
-const domeMat = new THREE.MeshStandardMaterial({color:0x44ddff,transparent:true,opacity:0.45,metalness:0.1,roughness:0.0});
+
+// グロードーム — emissive青白く発光
+const domeMat = new THREE.MeshStandardMaterial({color:0x88eeff,transparent:true,opacity:0.55,metalness:0.1,roughness:0.0,emissive:0x44aaff,emissiveIntensity:1.2});
 const ufoDome = new THREE.Mesh(new THREE.SphereGeometry(2.5,24,16,0,Math.PI*2,0,Math.PI/2), domeMat);
 ufoDome.position.y = 0.9; ufo.add(ufoDome);
-const pilot = new THREE.Mesh(new THREE.SphereGeometry(0.7,12,12), new THREE.MeshStandardMaterial({color:0x88ffaa,emissive:0x224422}));
+
+// パイロット — 緑に発光
+const pilot = new THREE.Mesh(new THREE.SphereGeometry(0.7,12,12), new THREE.MeshStandardMaterial({color:0x88ffaa,emissive:0x44ff88,emissiveIntensity:1.5}));
 pilot.position.y = 1.5; ufo.add(pilot);
-const ufoBottom = new THREE.Mesh(new THREE.CylinderGeometry(3.5,5.5,0.6,32), new THREE.MeshStandardMaterial({color:0x222233,metalness:0.5,roughness:0.4}));
+
+// 底面パネル — 淡く光る
+const ufoBottom = new THREE.Mesh(new THREE.CylinderGeometry(3.5,5.5,0.6,32), new THREE.MeshStandardMaterial({color:0x334455,metalness:0.6,roughness:0.3,emissive:0x003322,emissiveIntensity:0.8}));
 ufoBottom.position.y = -1.0; ufo.add(ufoBottom);
+
+// LEDリング × 24個 + 各LEDに点光源感
 const ledRing = new THREE.Group();
-for(let i=0;i<16;i++) {
-    const led = new THREE.Mesh(new THREE.SphereGeometry(0.35,8,8), new THREE.MeshBasicMaterial({color:new THREE.Color().setHSL(i/16,1.0,0.6)}));
-    const angle = (i/16)*Math.PI*2;
-    led.position.set(Math.cos(angle)*5.5,-0.3,Math.sin(angle)*5.5);
+for(let i=0;i<24;i++) {
+    const hue = i/24;
+    const led = new THREE.Mesh(
+        new THREE.SphereGeometry(0.32,8,8),
+        new THREE.MeshBasicMaterial({color:new THREE.Color().setHSL(hue,1.0,0.75)})
+    );
+    const angle = (i/24)*Math.PI*2;
+    led.position.set(Math.cos(angle)*5.6,-0.35,Math.sin(angle)*5.6);
     ledRing.add(led);
 }
 ufo.add(ledRing);
-const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.12,2.5,8), new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.9}));
+
+// アンテナ
+const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.12,2.5,8), new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.9,emissive:0x222222,emissiveIntensity:0.3}));
 antenna.position.y = 3.5; ufo.add(antenna);
-const antennaTop = new THREE.Mesh(new THREE.SphereGeometry(0.25,8,8), new THREE.MeshBasicMaterial({color:0xff4444}));
+const antennaTop = new THREE.Mesh(new THREE.SphereGeometry(0.28,8,8), new THREE.MeshBasicMaterial({color:0xff4444}));
 antennaTop.position.y = 4.8; ufo.add(antennaTop);
+
+// UFO下部グロー板（地面を照らすディスク状光）
+const glowDiscMat = new THREE.MeshBasicMaterial({color:0x00ffcc,transparent:true,opacity:0.18,side:THREE.DoubleSide,depthWrite:false});
+const glowDisc = new THREE.Mesh(new THREE.CircleGeometry(7,48), glowDiscMat);
+glowDisc.rotation.x = Math.PI/2;
+glowDisc.position.y = -1.3;
+ufo.add(glowDisc);
+
 ufo.position.set(0, 55, 0);
 scene.add(ufo);
 
-// UFOライト
-const spotLight = new THREE.SpotLight(0x88ffcc,40,200,Math.PI/5,0.4,1.5);
+// ======================================================
+// UFO LIGHTING SYSTEM — 多層ライト
+// ======================================================
+
+// 1) メインスポットライト（地面を強く照らす）
+const spotLight = new THREE.SpotLight(0x88ffcc, 80, 300, Math.PI/6, 0.35, 1.2);
 scene.add(spotLight); spotLight.castShadow = true;
+spotLight.shadow.mapSize.set(1024,1024);
 const lightTarget = new THREE.Object3D(); scene.add(lightTarget);
 spotLight.target = lightTarget;
-const ufoPointLight = new THREE.PointLight(0x00ffcc,3,40); scene.add(ufoPointLight);
-const beamOuter = new THREE.Mesh(new THREE.CylinderGeometry(5,7,50,20,1,true), new THREE.MeshBasicMaterial({color:0x00ff99,transparent:true,opacity:0.07,side:THREE.DoubleSide,depthWrite:false}));
-const beamInner = new THREE.Mesh(new THREE.CylinderGeometry(1,2,50,12,1,true), new THREE.MeshBasicMaterial({color:0x88ffdd,transparent:true,opacity:0.12,side:THREE.DoubleSide,depthWrite:false}));
+
+// 2) UFO周囲の環境ポイントライト（UFO自体を発光させる）
+const ufoPointLight = new THREE.PointLight(0x00ffcc, 8, 60);
+scene.add(ufoPointLight);
+
+// 3) UFO下面のグロー地面照明（弱め・広め）
+const ufoGroundLight = new THREE.PointLight(0x33ffaa, 4, 120);
+scene.add(ufoGroundLight);
+
+// 4) LEDカラーアクセントライト（横方向に色を広げる）
+const ufoColorLight1 = new THREE.PointLight(0xff44cc, 3, 50);
+const ufoColorLight2 = new THREE.PointLight(0x44ccff, 3, 50);
+scene.add(ufoColorLight1);
+scene.add(ufoColorLight2);
+
+// ======================================================
+// BEAM — 多層グロービーム
+// ======================================================
+
+// 最外層: 広い薄いコーン
+const beamOuter = new THREE.Mesh(
+    new THREE.CylinderGeometry(7, 10, 55, 32, 1, true),
+    new THREE.MeshBasicMaterial({color:0x00ff99,transparent:true,opacity:0.04,side:THREE.DoubleSide,depthWrite:false})
+);
+// 中間層: 中程度の輝き
+const beamMid = new THREE.Mesh(
+    new THREE.CylinderGeometry(3.5, 6, 55, 24, 1, true),
+    new THREE.MeshBasicMaterial({color:0x44ffcc,transparent:true,opacity:0.08,side:THREE.DoubleSide,depthWrite:false})
+);
+// 内層: 強い芯
+const beamInner = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.8, 2, 55, 16, 1, true),
+    new THREE.MeshBasicMaterial({color:0xaaffee,transparent:true,opacity:0.18,side:THREE.DoubleSide,depthWrite:false})
+);
+// 最芯: 白く輝くコア
+const beamCore = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.6, 55, 10, 1, true),
+    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false})
+);
+// ビーム地面着弾グロー
+const beamGlowMat = new THREE.MeshBasicMaterial({color:0x00ffcc,transparent:true,opacity:0.25,side:THREE.DoubleSide,depthWrite:false});
+const beamGlow = new THREE.Mesh(new THREE.CircleGeometry(9,48), beamGlowMat);
+beamGlow.rotation.x = -Math.PI/2;
+beamGlow.position.y = -27.4; // ビームグループ原点から地面へ
+
+// ビームに沿ったポイントライト群（上・中・下）
+const beamLight1 = new THREE.PointLight(0x00ffcc, 6, 40);  // ビーム上部
+const beamLight2 = new THREE.PointLight(0x44ffaa, 5, 35);  // ビーム中部
+const beamLight3 = new THREE.PointLight(0x88ffdd, 8, 55);  // 地面着弾光
+beamLight1.position.y = 15;
+beamLight2.position.y = 0;
+beamLight3.position.y = -25;
+
 const beamGroup = new THREE.Group();
-beamGroup.add(beamOuter,beamInner); scene.add(beamGroup);
+beamGroup.add(beamOuter, beamMid, beamInner, beamCore, beamGlow, beamLight1, beamLight2, beamLight3);
+scene.add(beamGroup);
 
 // ======================================================
 // TARGETS — 拡張版
@@ -1154,25 +1236,76 @@ function animate() {
 
     ufo.position.y = 55 + Math.sin(time*0.8)*1.2;
     ufo.rotation.y = time*0.3;
-    antennaTop.material.color.setHSL(0,1,0.5+0.5*Math.sin(time*4));
+    // アンテナ点滅
+    antennaTop.material.color.setHSL(0,1,0.5+0.5*Math.sin(time*5));
+
+    // スポットライト — UFO真下を照らす
     spotLight.position.copy(ufo.position);
-    lightTarget.position.set(ufo.position.x*0.3,0,ufo.position.z*0.3);
+    lightTarget.position.set(ufo.position.x, 0, ufo.position.z);
+
+    // UFO周囲ポイントライト更新
     ufoPointLight.position.copy(ufo.position);
-    beamGroup.position.set(ufo.position.x,ufo.position.y-25,ufo.position.z);
+    ufoGroundLight.position.set(ufo.position.x, ufo.position.y, ufo.position.z); // UFOと同じ高さ
+
+    // カラーアクセントライトを左右に揺らす
+    const cAngle = time * 0.8;
+    ufoColorLight1.position.set(ufo.position.x + Math.cos(cAngle)*6, ufo.position.y - 1, ufo.position.z + Math.sin(cAngle)*6);
+    ufoColorLight2.position.set(ufo.position.x - Math.cos(cAngle)*6, ufo.position.y - 1, ufo.position.z - Math.sin(cAngle)*6);
+
+    // ビームグループ位置
+    beamGroup.position.set(ufo.position.x, ufo.position.y - 27.5, ufo.position.z);
 
     const active = isAbducting||keys['Space'];
+
+    // LEDリング — 24個、カラーサイクル
     ledRing.children.forEach((led,i)=>{
-        led.material.color.setHSL(((i/16)+time*0.3)%1,1.0,active?0.8:0.5);
+        const hue = ((i/24)+time*0.4)%1;
+        led.material.color.setHSL(hue,1.0,active?0.92:0.65);
     });
-    beamGroup.visible=active;
+
+    // リングのemissive pulse
+    ufoRing.material.emissiveIntensity = 1.2 + Math.sin(time*3)*0.5;
+    ufoRing.material.emissive.setHSL((time*0.15)%1, 1.0, 0.5);
+
+    // ドームのグロー脈動
+    domeMat.emissiveIntensity = 0.8 + Math.sin(time*2)*0.4;
+
+    // グロー板の脈動
+    glowDisc.material.opacity = 0.12 + Math.sin(time*2)*0.06;
+
+    // ビーム表示切替 & 光強度
+    beamGroup.visible = active;
     if(active){
-        spotLight.intensity=60; spotLight.color.setHex(0x88ffcc);
-        beamOuter.material.opacity=0.08+Math.sin(time*20)*0.03;
-        beamInner.material.opacity=0.15+Math.sin(time*25)*0.05;
-        ufoPointLight.color.setHex(0x00ffcc); ufoPointLight.intensity=6;
+        // スポット強化
+        spotLight.intensity = 120; spotLight.color.setHex(0x88ffee);
+        spotLight.angle = Math.PI/7;
+        // ポイントライト強化
+        ufoPointLight.color.setHex(0x00ffee); ufoPointLight.intensity = 18; ufoPointLight.distance = 90;
+        ufoGroundLight.intensity = 12; ufoGroundLight.distance = 160;
+        ufoColorLight1.intensity = 6; ufoColorLight2.intensity = 6;
+        // ビーム不透明度アニメ（高速flicker）
+        const flicker = 1.0 + Math.sin(time*30)*0.12 + Math.sin(time*47)*0.08;
+        beamOuter.material.opacity = 0.055 * flicker;
+        beamMid.material.opacity  = 0.10 * flicker;
+        beamInner.material.opacity = 0.22 * flicker;
+        beamCore.material.opacity  = 0.30 * flicker;
+        beamGlow.material.opacity  = 0.30 + Math.sin(time*8)*0.10;
+        // ビーム内ライト強度
+        beamLight1.intensity = 8 + Math.sin(time*6)*2;
+        beamLight2.intensity = 7 + Math.sin(time*7)*2;
+        beamLight3.intensity = 14 + Math.sin(time*5)*4;
+        // UFO本体も輝く
+        bodyMat.emissiveIntensity = 1.2 + Math.sin(time*4)*0.4;
+        bodyMat.emissive.setHex(0x003344);
     } else {
-        spotLight.intensity=25; spotLight.color.setHex(0x55ccff);
-        ufoPointLight.color.setHex(0x00cc88); ufoPointLight.intensity=2;
+        spotLight.intensity = 35; spotLight.color.setHex(0x55ccff);
+        spotLight.angle = Math.PI/5;
+        ufoPointLight.color.setHex(0x00cc88); ufoPointLight.intensity = 6; ufoPointLight.distance = 60;
+        ufoGroundLight.intensity = 3; ufoGroundLight.distance = 100;
+        ufoColorLight1.intensity = 2; ufoColorLight2.intensity = 2;
+        bodyMat.emissiveIntensity = 0.4 + Math.sin(time*1.5)*0.15;
+        bodyMat.emissive.setHex(0x112233);
+        beamLight1.intensity = 0; beamLight2.intensity = 0; beamLight3.intensity = 0;
     }
 
     // ターゲット行動
