@@ -139,15 +139,15 @@
   </div>
   <div id="ctrl">マウス: UFO移動 &nbsp;|&nbsp; クリック / Space: ビーム &nbsp;|&nbsp; U: 強化パネル &nbsp;|&nbsp; Z: 図鑑</div>
   <!-- 大マップ -->
-  <div id="mov" style="position:absolute;inset:0;background:rgba(4,8,28,0.98);z-index:300;display:none;flex-direction:column;align-items:center;justify-content:center;">
-    <h2 style="color:#7ff0ff;margin-bottom:20px;text-shadow:0 0 10px #00eeff">🌎 アメリカ大陸横断マップ</h2>
-    <div id="m-cont" style="position:relative;width:800px;height:500px;background:rgba(255,255,255,0.05);border:2px solid rgba(100,200,255,0.3);border-radius:20px;overflow:hidden;">
-      <canvas id="mc" width="800" height="500"></canvas>
+  <div id="mov" style="position:absolute;inset:0;background:rgba(4,8,28,0.98);z-index:300;display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+    <h2 style="color:#7ff0ff;margin-bottom:15px;text-shadow:0 0 10px #00eeff;font-size:min(20px, 4vw)">🌎 アメリカ大陸横断マップ</h2>
+    <div id="m-cont" style="position:relative;width:95vw;max-width:800px;aspect-ratio:800/500;background:rgba(0,10,30,0.4);border:2px solid rgba(100,200,255,0.3);border-radius:15px;overflow:hidden;box-shadow:0 0 40px rgba(0,0,0,0.5)">
+      <canvas id="mc" width="800" height="500" style="width:100%;height:100%;display:block"></canvas>
     </div>
-    <div id="m-info" style="margin-top:20px;color:#fff;text-align:center;">
-      <div id="m-st-name" style="font-size:24px;font-weight:900;color:#7ff0ff">ステージを選択</div>
-      <div id="m-st-goal" style="font-size:14px;color:rgba(255,255,255,0.6)">-</div>
-      <button class="btn" id="m-st-btn" style="margin-top:15px;display:none">ミッション開始</button>
+    <div id="m-info" style="margin-top:15px;color:#fff;text-align:center;width:95vw;max-width:800px">
+      <div id="m-st-name" style="font-size:min(22px, 5vw);font-weight:900;color:#7ff0ff">ステージを選択</div>
+      <div id="m-st-goal" style="font-size:min(13px, 3.5vw);color:rgba(255,255,255,0.7);max-width:600px;margin:0 auto">-</div>
+      <button class="btn" id="m-st-btn" style="margin-top:12px;padding:8px 30px;font-size:15px;display:none">ミッション開始</button>
     </div>
   </div>
   <!-- Stage Clear -->
@@ -1394,16 +1394,51 @@ function openMap(){
 
 function drawMap(){
   mctx.clearRect(0,0,800,500);
-  // US Map Shape (Simplified)
-  mctx.fillStyle='rgba(60,200,255,0.08)';
-  mctx.beginPath();
-  mctx.moveTo(100,100); mctx.lineTo(700,100); mctx.lineTo(750,400); mctx.lineTo(150,450); mctx.closePath();
-  mctx.fill();
-  mctx.strokeStyle='rgba(100,220,255,0.3)'; mctx.lineWidth=2; mctx.stroke();
+  
+  // Ocean Background
+  let og = mctx.createLinearGradient(0,0,0,500);
+  og.addColorStop(0,'#051530'); og.addColorStop(1,'#0a2a4a');
+  mctx.fillStyle=og; mctx.fillRect(0,0,800,500);
+  
+  // Grid lines
+  mctx.strokeStyle='rgba(100,200,255,0.05)'; mctx.lineWidth=1;
+  for(let x=0;x<800;x+=40){mctx.beginPath();mctx.moveTo(x,0);mctx.lineTo(x,500);mctx.stroke();}
+  for(let y=0;y<500;y+=40){mctx.beginPath();mctx.moveTo(0,y);mctx.lineTo(800,y);mctx.stroke();}
 
-  // Draw Paths
-  mctx.setLineDash([5,5]);
-  mctx.strokeStyle='rgba(100,220,255,0.2)';
+  // USA Map Shape (More detailed)
+  const usa_poly = [
+    [80,100],[120,60],[220,65],[350,75],[550,70],[720,90],
+    [760,110],[740,240],[780,260],[740,350],[690,440],
+    [640,430],[580,380],[520,385],[420,440],[380,442],
+    [320,370],[240,365],[180,410],[100,380],[70,300],[85,240],[60,160]
+  ];
+  
+  // Land Glow
+  mctx.shadowBlur = 30; mctx.shadowColor = 'rgba(0,200,255,0.2)';
+  
+  let lg = mctx.createLinearGradient(100,100,700,400);
+  lg.addColorStop(0,'#0a3a2a'); lg.addColorStop(0.5,'#1a4a3a'); lg.addColorStop(1,'#0a2a4a');
+  mctx.fillStyle=lg;
+  mctx.beginPath();
+  mctx.moveTo(usa_poly[0][0], usa_poly[0][1]);
+  usa_poly.forEach(p=>mctx.lineTo(p[0],p[1]));
+  mctx.closePath();
+  mctx.fill();
+  mctx.shadowBlur = 0;
+  
+  mctx.strokeStyle='rgba(100,220,255,0.4)'; mctx.lineWidth=3; mctx.stroke();
+
+  // Terrain highlights (Farm/Suburbs/City indicators)
+  // Kansas area (Green)
+  mctx.fillStyle='rgba(40,180,80,0.15)';
+  mctx.beginPath(); mctx.arc(200,280,60,0,Math.PI*2); mctx.fill();
+  // NY/East area (Industrial/Blue)
+  mctx.fillStyle='rgba(100,150,255,0.15)';
+  mctx.beginPath(); mctx.arc(680,220,80,0,Math.PI*2); mctx.fill();
+
+  // Draw Paths with "Travel" effect
+  mctx.setLineDash([8,6]);
+  mctx.strokeStyle='rgba(100,220,255,0.3)'; mctx.lineWidth=2;
   for(let i=0; i<STAGES.length-1; i++){
     mctx.beginPath();
     mctx.moveTo(STAGES[i].x, STAGES[i].y);
@@ -1416,38 +1451,73 @@ function drawMap(){
   STAGES.forEach((s,i)=>{
     let locked = i > unlockedIdx;
     let selected = i === selectedNodeIdx;
+    let current = i === unlockedIdx;
+    
     mctx.save();
     mctx.translate(s.x, s.y);
     
-    // Glow
+    // Wave animation for unlocked
     if(!locked){
-      let g = mctx.createRadialGradient(0,0,0,0,0,25);
-      g.addColorStop(0,'rgba(0,255,255,0.4)'); g.addColorStop(1,'rgba(0,255,255,0)');
-      mctx.fillStyle=g; mctx.beginPath(); mctx.arc(0,0,25,0,Math.PI*2); mctx.fill();
+      let pulse = 0.5 + 0.5 * Math.sin(Date.now()*0.005);
+      mctx.strokeStyle = `rgba(0,255,255,${0.2*pulse})`; mctx.lineWidth=2;
+      mctx.beginPath(); mctx.arc(0,0,15+pulse*10,0,Math.PI*2); mctx.stroke();
     }
 
-    mctx.fillStyle = locked ? '#444' : (selected ? '#fff' : '#00ddff');
-    mctx.beginPath(); mctx.arc(0,0,selected?12:8,0,Math.PI*2); mctx.fill();
-    mctx.strokeStyle = '#08071a'; mctx.lineWidth=2; mctx.stroke();
+    // Node core
+    let r = selected ? 11 : 7;
+    let grad = mctx.createRadialGradient(0,0,0,0,0,r);
+    if(locked){
+      grad.addColorStop(0,'#333'); grad.addColorStop(1,'#111');
+    } else if(selected){
+      grad.addColorStop(0,'#fff'); grad.addColorStop(1,'#00e6ff');
+    } else {
+      grad.addColorStop(0,'#00e6ff'); grad.addColorStop(1,'#0066aa');
+    }
+    
+    mctx.fillStyle=grad; mctx.beginPath(); mctx.arc(0,0,r,0,Math.PI*2); mctx.fill();
+    mctx.strokeStyle = locked ? '#222' : '#fff'; mctx.lineWidth=selected?3:1.5; mctx.stroke();
+
+    // Icon/Symbol hint
+    mctx.fillStyle = '#fff'; mctx.font = '10px Segoe UI'; mctx.textAlign='center';
+    let icon = '';
+    if(s.id==='ks') icon='🌽';
+    if(s.id==='nv') icon='🎸';
+    if(s.id==='ch') icon='🏭';
+    if(s.id==='dc') icon='🏛';
+    if(s.id==='ny') icon='🗽';
+    if(!locked) mctx.fillText(icon, 0, -18);
 
     // Label
-    mctx.fillStyle = '#fff';
-    mctx.font = '12px Segoe UI';
-    mctx.textAlign='center';
-    mctx.fillText(locked?'???':s.name, 0, 25);
+    mctx.fillStyle = locked ? 'rgba(255,255,255,0.2)' : '#fff';
+    mctx.font = (selected||current)?'900 12px Segoe UI':'11px Segoe UI';
+    mctx.fillText(locked?'???':s.name, 0, 24);
     
-    if(i <= unlockedIdx && i !== unlockedIdx) {
-       mctx.fillStyle='#ffff00'; mctx.fillText('⭐', 0, -15);
+    if(i < unlockedIdx) {
+       mctx.fillStyle='#ffff00'; mctx.font='10px serif'; mctx.fillText('★', 0, -32);
     }
+    
+    // Current UFO indicator
+    if(current && !selected){
+       mctx.save();
+       mctx.translate(0, -35 + Math.sin(Date.now()*0.01)*5);
+       mctx.fillStyle='#00ff88'; mctx.beginPath(); mctx.moveTo(-5,0);mctx.lineTo(5,0);mctx.lineTo(0,8);mctx.closePath();mctx.fill();
+       mctx.restore();
+    }
+    
     mctx.restore();
   });
 }
 
 mc.onclick = (e) => {
   let r = mc.getBoundingClientRect();
-  let x = e.clientX - r.left, y = e.clientY - r.top;
+  // Map display pixels to internal 800x500 coordinates
+  let scaleX = 800 / r.width;
+  let scaleY = 500 / r.height;
+  let x = (e.clientX - r.left) * scaleX;
+  let y = (e.clientY - r.top) * scaleY;
+  
   STAGES.forEach((s,i)=>{
-    if(dist({x,y}, s) < 20 && i <= unlockedIdx){
+    if(dist({x,y}, s) < 25 && i <= unlockedIdx){
       selectedNodeIdx = i;
       document.getElementById('m-st-name').textContent = s.name;
       document.getElementById('m-st-goal').textContent = `目標: ${s.goal} 捕獲 | ${s.desc}`;
