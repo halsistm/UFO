@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chunked Terrain System</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <canvas id="terrainCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('terrainCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const CHUNK_SIZE = 16;
+        const VIEW_DISTANCE = 2;
+        const biomes = {
+            grassland: '#7CFC00',
+            farmland: '#DEB887',
+            urban: '#808080',
+            residential: '#A0522D',
+            industrial: '#696969',
+            mountains: '#A9A9A9',
+            rivers: '#4682B4',
+            ocean: '#1E90FF'
+        };
+
+        let player = { x: 0, y: 0 }; // Player position
+        let chunks = {};
+
+        function generateChunk(x, y) {
+            const chunk = [];
+            for (let i = 0; i < CHUNK_SIZE; i++) {
+                chunk[i] = [];
+                for (let j = 0; j < CHUNK_SIZE; j++) {
+                    // Randomly assign a biome
+                    const biomeKeys = Object.keys(biomes);
+                    const biome = biomeKeys[Math.floor(Math.random() * biomeKeys.length)];
+                    chunk[i][j] = biomes[biome];
+                }
+            }
+            return chunk;
+        }
+
+        function loadChunks() {
+            const startX = Math.floor(player.x / CHUNK_SIZE) - VIEW_DISTANCE;
+            const startY = Math.floor(player.y / CHUNK_SIZE) - VIEW_DISTANCE;
+
+            for (let x = startX; x <= startX + VIEW_DISTANCE * 2; x++) {
+                for (let y = startY; y <= startY + VIEW_DISTANCE * 2; y++) {
+                    if (!chunks[`${x},${y}`]) {
+                        chunks[`${x},${y}`] = generateChunk(x, y);
+                    }
+                }
+            }
+        }
+
+        function drawChunks() {
+            for (const key in chunks) {
+                const [x, y] = key.split(',').map(Number);
+                const chunk = chunks[key];
+                for (let i = 0; i < CHUNK_SIZE; i++) {
+                    for (let j = 0; j < CHUNK_SIZE; j++) {
+                        ctx.fillStyle = chunk[i][j];
+                        ctx.fillRect((x * CHUNK_SIZE + i) * 10, (y * CHUNK_SIZE + j) * 10, 10, 10);
+                    }
+                }
+            }
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            loadChunks();
+            drawChunks();
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.addEventListener('keydown', (event) => {
+            switch (event.key) {
+                case 'ArrowUp': player.y -= 1; break;
+                case 'ArrowDown': player.y += 1; break;
+                case 'ArrowLeft': player.x -= 1; break;
+                case 'ArrowRight': player.x += 1; break;
+            }
+        });
+
+        gameLoop();
+    </script>
+</body>
+</html>
