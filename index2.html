@@ -775,7 +775,7 @@ window.addEventListener('load', () => {
         );
         ufoPointLight.position.copy(ufo.position);
 
-        beamGroup.position.set(ufo.position.x, ufo.position.y - 46, ufo.position.z);
+        beamGroup.position.set(ufo.position.x, ufo.position.y - 25, ufo.position.z);
 
         // LED色サイクル
         const active = isAbducting || keys['Space'];
@@ -864,7 +864,8 @@ window.addEventListener('load', () => {
         });
 
         // カメラ追従（スムーズ）
-        camTarget.set(ufo.position.x, ufo.position.y + 22, ufo.position.z + 40);
+        camTarget.set(ufo.position.x, ufo.position.y + 35, ufo.position.z + 55);
+        camLookTarget.set(ufo.position.x, ufo.position.y - 25, ufo.position.z);
         camera.position.lerp(camTarget, 0.08);
         camLookTarget.lerp(ufo.position, 0.1);
         camera.lookAt(camLookTarget);
