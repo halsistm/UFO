@@ -30,6 +30,28 @@
             background: rgba(0,0,0,0.4); padding: 5px 16px; border-radius: 20px;
             border: 1px solid #00ff8844;
         }
+        #hp-bar-container {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            margin-top: 50px;
+            color: #ff4444; font-size: 11px; letter-spacing: 2px;
+            text-align: center;
+        }
+        #hp-bar-bg {
+            width: 140px; height: 8px; background: #1a0000;
+            border: 1px solid #ff4444; border-radius: 4px; margin-top: 3px;
+        }
+        #hp-fill {
+            height: 100%; background: linear-gradient(90deg,#ff2200,#ff6600);
+            border-radius: 4px; transition: width 0.3s;
+        }
+        #apache-warning {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%,-50%);
+            color: #ff2200; font-size: 28px; font-weight: bold;
+            text-shadow: 0 0 20px #ff4400;
+            pointer-events: none; opacity: 0;
+            letter-spacing: 3px;
+        }
         #controls {
             position: absolute; bottom: 30px; right: 20px;
             display: flex; gap: 16px; pointer-events: auto;
@@ -45,6 +67,17 @@
             transition: all 0.1s; user-select: none;
         }
         .btn:active { background: radial-gradient(circle, rgba(0,255,136,0.4) 0%, rgba(0,255,136,0.1) 100%); }
+        #attack-btn {
+            width: 80px; height: 80px;
+            background: radial-gradient(circle, rgba(255,60,0,0.2) 0%, rgba(255,60,0,0.05) 100%);
+            border: 2px solid #ff3300; border-radius: 50%;
+            color: #ff5500; display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 10px; letter-spacing: 1px;
+            cursor: pointer; text-shadow: 0 0 8px #ff3300;
+            box-shadow: 0 0 15px #ff330033;
+            transition: all 0.1s; user-select: none; pointer-events: auto;
+        }
+        #attack-btn:active { background: radial-gradient(circle, rgba(255,60,0,0.5) 0%, rgba(255,60,0,0.15) 100%); }
         #encyclopedia-btn {
             position: absolute; top: 20px; right: 20px;
             padding: 10px 20px; background: rgba(0,0,0,0.7);
@@ -118,15 +151,21 @@
         <div id="multiplier">ABDUCTED: <span id="count">0</span></div>
     </div>
     <div id="biome-label">GRASSLAND</div>
+    <div id="hp-bar-container">
+        UFO HP
+        <div id="hp-bar-bg"><div id="hp-fill" style="width:100%"></div></div>
+    </div>
     <button id="encyclopedia-btn">[ 図鑑 ]</button>
     <div id="controls">
         <div class="btn" id="abduct-btn">ABDUCT</div>
+        <div id="attack-btn">ATTACK</div>
     </div>
-    <div id="controls-hint">WASD / 矢印: 移動<br>SPACE / ABDUCT: 吸い込み</div>
+    <div id="controls-hint">WASD / 矢印: 移動<br>ABDUCT: 吸い込み<br>SPACE: 攻撃ビーム</div>
     <div id="virtual-stick-container">
         <div id="stick-base"><div id="stick-knob"></div></div>
     </div>
     <div id="notification">+100</div>
+    <div id="apache-warning">⚠ APACHE INCOMING ⚠</div>
 </div>
 
 <div id="modal">
@@ -144,12 +183,11 @@ window.addEventListener('load', () => {
 // ======================================================
 // WORLD / CHUNK SYSTEM
 // ======================================================
-const CHUNK_SIZE = 64;       // 1チャンク = 64ユニット
-const CHUNK_RENDER_DIST = 3; // 周囲3チャンク（7x7=49チャンク）
-const BLOCK_SIZE = 8;        // 1ブロックのサイズ
-const BLOCKS_PER_CHUNK = CHUNK_SIZE / BLOCK_SIZE; // 8ブロック/チャンク
+const CHUNK_SIZE = 64;
+const CHUNK_RENDER_DIST = 3;
+const BLOCK_SIZE = 8;
+const BLOCKS_PER_CHUNK = CHUNK_SIZE / BLOCK_SIZE;
 
-// バイオームタイプ
 const BIOME = {
     OCEAN:      0,
     BEACH:      1,
@@ -169,7 +207,6 @@ const BIOME_NAMES = {
     8: 'INDUSTRIAL', 9: 'RIVER'
 };
 
-// シンプルなノイズ関数（Perlin風）
 function hash(n) {
     n = Math.sin(n) * 43758.5453123;
     return n - Math.floor(n);
@@ -193,22 +230,18 @@ function fbm(x, y, oct=4) {
     return v/max;
 }
 
-// バイオーム決定（ワールド座標に基づく）
 function getBiome(wx, wz) {
     const scale = 0.008;
     const h = fbm(wx*scale, wz*scale) + 0.5;
     const moisture = fbm(wx*scale+100, wz*scale+200) + 0.5;
 
-    // 川: 特定のストライプパターン
     const riverN = Math.abs(fbm(wx*0.005, wz*0.005+500));
     if(riverN < 0.07) return BIOME.RIVER;
 
-    // 海
     if(h < 0.28) return BIOME.OCEAN;
     if(h < 0.33) return BIOME.BEACH;
     if(h > 0.78) return BIOME.MOUNTAIN;
 
-    // 地形による分類
     const cityN = fbm(wx*0.015+300, wz*0.015+300) + 0.5;
     if(cityN > 0.72) return BIOME.URBAN;
     if(cityN > 0.60) return BIOME.INDUSTRIAL;
@@ -218,28 +251,18 @@ function getBiome(wx, wz) {
     return BIOME.FARMLAND;
 }
 
-function getGroundHeight(biome) {
-    switch(biome) {
-        case BIOME.OCEAN:  return -3;
-        case BIOME.BEACH:  return 0.2;
-        case BIOME.MOUNTAIN: return 4 + Math.random()*8;
-        case BIOME.RIVER:  return -0.5;
-        default: return 0;
-    }
-}
-
-// バイオーム別ブロックカラー
+// ---- TERRAIN COLORS (toned down / darker) ----
 const BIOME_COLORS = {
-    [BIOME.OCEAN]:      [0x1a3a6e, 0x0e2550],
-    [BIOME.BEACH]:      [0xd4b483, 0xc8a870],
-    [BIOME.GRASSLAND]:  [0x2d5a1b, 0x3a7a20],
-    [BIOME.FARMLAND]:   [0x8b6914, 0xa07820],
-    [BIOME.FOREST]:     [0x1a3d0f, 0x142e0c],
-    [BIOME.MOUNTAIN]:   [0x7a7a7a, 0x909090],
-    [BIOME.SUBURB]:     [0x4a4a3a, 0x3d3d2d],
-    [BIOME.URBAN]:      [0x222233, 0x1a1a28],
-    [BIOME.INDUSTRIAL]: [0x333322, 0x2a2a1a],
-    [BIOME.RIVER]:      [0x1e5080, 0x14355a],
+    [BIOME.OCEAN]:      [0x0a1e38, 0x07142a],
+    [BIOME.BEACH]:      [0x7a6535, 0x6a5528],
+    [BIOME.GRASSLAND]:  [0x162e0a, 0x1c3e0c],
+    [BIOME.FARMLAND]:   [0x4a3808, 0x563e0e],
+    [BIOME.FOREST]:     [0x0a1e06, 0x071504],
+    [BIOME.MOUNTAIN]:   [0x3a3a3a, 0x484848],
+    [BIOME.SUBURB]:     [0x1e1e16, 0x181810],
+    [BIOME.URBAN]:      [0x0e0e16, 0x0a0a10],
+    [BIOME.INDUSTRIAL]: [0x121208, 0x0e0e06],
+    [BIOME.RIVER]:      [0x081828, 0x05101a],
 };
 
 // ======================================================
@@ -256,16 +279,15 @@ renderer.autoClear = false;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 2.0;
+renderer.toneMappingExposure = 1.2; // reduced from 2.0
 document.body.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 800);
 camera.position.set(0, 40, 55);
 
-// 照明
-const ambient = new THREE.AmbientLight(0x223355, 0.8);
+const ambient = new THREE.AmbientLight(0x223355, 0.6);
 scene.add(ambient);
-const moonLight = new THREE.DirectionalLight(0x8899cc, 0.6);
+const moonLight = new THREE.DirectionalLight(0x6677aa, 0.4);
 moonLight.position.set(-50, 80, -30);
 moonLight.castShadow = true;
 moonLight.shadow.mapSize.set(2048, 2048);
@@ -274,11 +296,10 @@ moonLight.shadow.camera.top = 300; moonLight.shadow.camera.bottom = -300;
 moonLight.shadow.camera.far = 600;
 moonLight.shadow.bias = -0.001;
 scene.add(moonLight);
-const horizonLight = new THREE.DirectionalLight(0xff8833, 0.15);
+const horizonLight = new THREE.DirectionalLight(0xff8833, 0.08);
 horizonLight.position.set(100, 5, 100);
 scene.add(horizonLight);
 
-// 星
 const starGeo = new THREE.BufferGeometry();
 const starPos = new Float32Array(3000*3);
 for(let i=0;i<3000;i++){
@@ -295,7 +316,6 @@ scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({color:0xffffff,siz
 const chunkCache = new Map();
 const activeChunks = new Set();
 
-// 共有マテリアルキャッシュ
 const matCache = new Map();
 function getMat(color, roughness=0.9, metalness=0.0) {
     const key = `${color}_${roughness}_${metalness}`;
@@ -308,6 +328,51 @@ function worldToChunk(wx, wz) {
     return { cx: Math.floor(wx/CHUNK_SIZE), cz: Math.floor(wz/CHUNK_SIZE) };
 }
 
+// Road materials (shared)
+const roadMat = new THREE.MeshStandardMaterial({color:0x111115, roughness:0.95});
+const sidewalkMat = new THREE.MeshStandardMaterial({color:0x1a1a20, roughness:0.9});
+const laneMarkMat = new THREE.MeshBasicMaterial({color:0x555540});
+
+function addRoads(group, biome) {
+    const roadW = biome === BIOME.URBAN ? 7 : 5;
+    const halfCS = CHUNK_SIZE / 2;
+
+    // Horizontal road across center
+    const hRoad = new THREE.Mesh(new THREE.PlaneGeometry(CHUNK_SIZE+2, roadW), roadMat);
+    hRoad.rotation.x = -Math.PI/2;
+    hRoad.position.set(halfCS, 0.07, halfCS);
+    group.add(hRoad);
+
+    // Vertical road across center
+    const vRoad = new THREE.Mesh(new THREE.PlaneGeometry(roadW, CHUNK_SIZE+2), roadMat);
+    vRoad.rotation.x = -Math.PI/2;
+    vRoad.position.set(halfCS, 0.07, halfCS);
+    group.add(vRoad);
+
+    // Sidewalks beside horizontal road
+    [-1,1].forEach(s => {
+        const sw = new THREE.Mesh(new THREE.PlaneGeometry(CHUNK_SIZE+2, 1.5), sidewalkMat);
+        sw.rotation.x = -Math.PI/2;
+        sw.position.set(halfCS, 0.06, halfCS + s*(roadW/2+0.75));
+        group.add(sw);
+    });
+
+    // Center line dashes (horizontal road)
+    for(let i=0; i<8; i++) {
+        const dash = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.25), laneMarkMat);
+        dash.rotation.x = -Math.PI/2;
+        dash.position.set(i*8+4, 0.08, halfCS);
+        group.add(dash);
+    }
+    // Center line dashes (vertical road)
+    for(let i=0; i<8; i++) {
+        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 4), laneMarkMat);
+        dash.rotation.x = -Math.PI/2;
+        dash.position.set(halfCS, 0.08, i*8+4);
+        group.add(dash);
+    }
+}
+
 function buildChunk(cx, cz) {
     const key = getChunkKey(cx, cz);
     if(chunkCache.has(key)) return chunkCache.get(key);
@@ -315,7 +380,6 @@ function buildChunk(cx, cz) {
     const group = new THREE.Group();
     group.position.set(cx*CHUNK_SIZE, 0, cz*CHUNK_SIZE);
 
-    // チャンク内をブロックグリッドで生成
     const blockGeo = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
 
     for(let bx=0; bx<BLOCKS_PER_CHUNK; bx++) {
@@ -324,7 +388,6 @@ function buildChunk(cx, cz) {
             const wz = cz*CHUNK_SIZE + bz*BLOCK_SIZE + BLOCK_SIZE/2;
             const biome = getBiome(wx, wz);
             const colors = BIOME_COLORS[biome];
-            // チェッカーパターンで2色交互
             const col = colors[(bx+bz)%2];
             const mat = getMat(col);
 
@@ -337,12 +400,10 @@ function buildChunk(cx, cz) {
             block.receiveShadow = true;
             group.add(block);
 
-            // バイオーム装飾（確率的）
             if(biome===BIOME.OCEAN || biome===BIOME.RIVER) {
-                // 水面エフェクト
                 const waterMesh = new THREE.Mesh(
                     new THREE.PlaneGeometry(BLOCK_SIZE, BLOCK_SIZE),
-                    new THREE.MeshStandardMaterial({color:0x1a5590,transparent:true,opacity:0.75,roughness:0.1,metalness:0.3})
+                    new THREE.MeshStandardMaterial({color:0x0e2e55,transparent:true,opacity:0.8,roughness:0.05,metalness:0.4})
                 );
                 waterMesh.rotation.x = -Math.PI/2;
                 waterMesh.position.set(bx*BLOCK_SIZE+BLOCK_SIZE/2, 0.1, bz*BLOCK_SIZE+BLOCK_SIZE/2);
@@ -351,7 +412,12 @@ function buildChunk(cx, cz) {
         }
     }
 
-    // バイオーム別オブジェクト生成
+    // ---- Roads for urban biomes ----
+    const centerBiome = getBiome(cx*CHUNK_SIZE+CHUNK_SIZE/2, cz*CHUNK_SIZE+CHUNK_SIZE/2);
+    if(centerBiome===BIOME.URBAN || centerBiome===BIOME.SUBURB || centerBiome===BIOME.INDUSTRIAL) {
+        addRoads(group, centerBiome);
+    }
+
     spawnBiomeObjects(group, cx, cz);
 
     scene.add(group);
@@ -364,16 +430,16 @@ function spawnBiomeObjects(group, cx, cz) {
     const biome = getBiome(cx*CHUNK_SIZE+CHUNK_SIZE/2, cz*CHUNK_SIZE+CHUNK_SIZE/2);
 
     const spawnCount = {
-        [BIOME.FOREST]:     8,
-        [BIOME.GRASSLAND]:  4,
-        [BIOME.FARMLAND]:   3,
-        [BIOME.MOUNTAIN]:   3,
-        [BIOME.SUBURB]:     5,
-        [BIOME.URBAN]:      6,
-        [BIOME.INDUSTRIAL]: 4,
+        [BIOME.FOREST]:     10,
+        [BIOME.GRASSLAND]:  5,
+        [BIOME.FARMLAND]:   4,
+        [BIOME.MOUNTAIN]:   4,
+        [BIOME.SUBURB]:     6,
+        [BIOME.URBAN]:      7,
+        [BIOME.INDUSTRIAL]: 5,
         [BIOME.BEACH]:      2,
         [BIOME.OCEAN]:      0,
-        [BIOME.RIVER]:      1,
+        [BIOME.RIVER]:      0,
     }[biome] || 0;
 
     for(let i=0; i<spawnCount; i++) {
@@ -384,11 +450,15 @@ function spawnBiomeObjects(group, cx, cz) {
 }
 
 function placeDecoration(group, biome, lx, lz, rng) {
-    if(biome===BIOME.FOREST || biome===BIOME.GRASSLAND || biome===BIOME.MOUNTAIN) {
+    if(biome===BIOME.FOREST || biome===BIOME.MOUNTAIN) {
         const scale = 0.7 + rng()*0.8;
         const treeGroup = makeTree(scale, biome===BIOME.MOUNTAIN ? 'pine' : 'deciduous');
         treeGroup.position.set(lx, 0, lz);
         group.add(treeGroup);
+    } else if(biome===BIOME.GRASSLAND) {
+        const r = rng();
+        if(r < 0.6) { const t = makeTree(0.5+rng()*0.4); t.position.set(lx,0,lz); group.add(t); }
+        else { const b = makeBush(rng); b.position.set(lx,0,lz); group.add(b); }
     } else if(biome===BIOME.FARMLAND) {
         const t = Math.floor(rng()*3);
         if(t===0) { const f=makeFarmField(); f.position.set(lx,0.1,lz); group.add(f); }
@@ -399,15 +469,14 @@ function placeDecoration(group, biome, lx, lz, rng) {
         house.position.set(lx, 0, lz);
         house.rotation.y = Math.floor(rng()*4)*Math.PI/2;
         group.add(house);
-        // 庭木
         const tree = makeTree(0.6);
         tree.position.set(lx+4, 0, lz+4);
         group.add(tree);
     } else if(biome===BIOME.URBAN) {
-        const h = 15 + rng()*50;
-        const w = 8 + rng()*12;
-        const d = 8 + rng()*12;
-        const colors = [0x334455,0x3a3a4a,0x2a3345,0x444444,0x2d3d2d];
+        const h = 20 + rng()*60;
+        const w = 8 + rng()*14;
+        const d = 8 + rng()*14;
+        const colors = [0x1e2535,0x252535,0x181828,0x222230,0x1a2220];
         const bldg = makeBuilding(w, d, h, colors[Math.floor(rng()*colors.length)]);
         bldg.position.set(lx, 0, lz);
         group.add(bldg);
@@ -423,7 +492,6 @@ function placeDecoration(group, biome, lx, lz, rng) {
     }
 }
 
-// 決定的RNG
 function createRNG(seed) {
     let s = seed;
     return function() {
@@ -433,7 +501,7 @@ function createRNG(seed) {
 }
 
 // ======================================================
-// 3Dモデルファクトリ
+// 3D MODEL FACTORIES
 // ======================================================
 
 function makeTree(scale=1, type='deciduous') {
@@ -460,6 +528,16 @@ function makeTree(scale=1, type='deciduous') {
     return g;
 }
 
+function makeBush(rng) {
+    const g = new THREE.Group();
+    const col = [0x0e3a08, 0x123d0c, 0x0a2e06][Math.floor(rng()*3)];
+    const s = 0.4 + rng()*0.5;
+    const body = new THREE.Mesh(new THREE.SphereGeometry(s,8,6), getMat(col, 0.9));
+    body.position.y = s;
+    g.add(body);
+    return g;
+}
+
 function makePalmTree() {
     const g = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.35,6,8), getMat(0x8b6914,0.9));
@@ -476,7 +554,7 @@ function makeBuilding(w, d, h, color) {
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), getMat(color,0.8,0.1));
     body.position.y = h/2; body.castShadow = true; body.receiveShadow = true; g.add(body);
-    const winMat = new THREE.MeshBasicMaterial({color:0xffdd88});
+    const winMat = new THREE.MeshBasicMaterial({color:0xffcc44});
     const rows = Math.floor(h/3), cols = Math.floor(w/2.5);
     for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) {
         if(Math.random()>0.35) {
@@ -498,10 +576,8 @@ function makeHouse(rng) {
     base.position.y = 1.75; base.castShadow = true; g.add(base);
     const roof = new THREE.Mesh(new THREE.ConeGeometry(5.2,2.5,4), getMat(rc,0.85));
     roof.position.y = 4.75; roof.rotation.y = Math.PI/4; roof.castShadow = true; g.add(roof);
-    // ドア
     const door = new THREE.Mesh(new THREE.PlaneGeometry(0.9,1.6), new THREE.MeshBasicMaterial({color:0x5a3010}));
     door.position.set(0, 0.8, 3.01); g.add(door);
-    // 窓2つ
     [[-2,1.8],[2,1.8]].forEach(([dx,dy]) => {
         const win = new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.9), new THREE.MeshBasicMaterial({color:0x88ccff}));
         win.position.set(dx, dy, 3.01); g.add(win);
@@ -539,11 +615,10 @@ function makeFarmField() {
 
 function makeFactory() {
     const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(14,6,10), getMat(0x444433,0.85));
+    const body = new THREE.Mesh(new THREE.BoxGeometry(14,6,10), getMat(0x353325,0.85));
     body.position.y = 3; g.add(body);
-    // 煙突
     [3,-3].forEach(ox => {
-        const ch = new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.8,8,10), getMat(0x333322,0.9));
+        const ch = new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.8,8,10), getMat(0x252215,0.9));
         ch.position.set(ox, 10, -3); g.add(ch);
     });
     return g;
@@ -551,18 +626,18 @@ function makeFactory() {
 
 function makeWarehouse() {
     const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(18,5,10), getMat(0x555544,0.9));
+    const body = new THREE.Mesh(new THREE.BoxGeometry(18,5,10), getMat(0x3a3830,0.9));
     body.position.y = 2.5; g.add(body);
-    const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.1,9.5,2,4), getMat(0x666655,0.9));
+    const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.1,9.5,2,4), getMat(0x454540,0.9));
     roof.position.y = 6; roof.rotation.y = Math.PI/4; g.add(roof);
     return g;
 }
 
 function makeChimney() {
     const g = new THREE.Group();
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.5,2,15,12), getMat(0x444433,0.9));
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.5,2,15,12), getMat(0x2e2c20,0.9));
     base.position.y = 7.5; g.add(base);
-    const top = new THREE.Mesh(new THREE.CylinderGeometry(1.8,1.5,1.5,12), getMat(0x333322,0.9));
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(1.8,1.5,1.5,12), getMat(0x222015,0.9));
     top.position.y = 15.75; g.add(top);
     return g;
 }
@@ -571,30 +646,24 @@ function makeChimney() {
 // UFO
 // ======================================================
 const ufo = new THREE.Group();
-// UFO本体 — emissiveで自発光
 const bodyMat = new THREE.MeshStandardMaterial({color:0xaabbcc,metalness:0.8,roughness:0.15,emissive:0x112233,emissiveIntensity:0.6});
 const ufoBody = new THREE.Mesh(new THREE.CylinderGeometry(4.5,6.5,1.8,32), bodyMat);
 ufoBody.castShadow = true; ufo.add(ufoBody);
 
-// 光るリング（底面エッジ）
 const ringMat = new THREE.MeshStandardMaterial({color:0x88ffee,metalness:0.9,roughness:0.05,emissive:0x00ffcc,emissiveIntensity:1.5});
 const ufoRing = new THREE.Mesh(new THREE.TorusGeometry(5.5,0.45,10,48), ringMat);
 ufoRing.position.y = -0.3; ufo.add(ufoRing);
 
-// グロードーム — emissive青白く発光
 const domeMat = new THREE.MeshStandardMaterial({color:0x88eeff,transparent:true,opacity:0.55,metalness:0.1,roughness:0.0,emissive:0x44aaff,emissiveIntensity:1.2});
 const ufoDome = new THREE.Mesh(new THREE.SphereGeometry(2.5,24,16,0,Math.PI*2,0,Math.PI/2), domeMat);
 ufoDome.position.y = 0.9; ufo.add(ufoDome);
 
-// パイロット — 緑に発光
 const pilot = new THREE.Mesh(new THREE.SphereGeometry(0.7,12,12), new THREE.MeshStandardMaterial({color:0x88ffaa,emissive:0x44ff88,emissiveIntensity:1.5}));
 pilot.position.y = 1.5; ufo.add(pilot);
 
-// 底面パネル — 淡く光る
 const ufoBottom = new THREE.Mesh(new THREE.CylinderGeometry(3.5,5.5,0.6,32), new THREE.MeshStandardMaterial({color:0x334455,metalness:0.6,roughness:0.3,emissive:0x003322,emissiveIntensity:0.8}));
 ufoBottom.position.y = -1.0; ufo.add(ufoBottom);
 
-// LEDリング × 24個 + 各LEDに点光源感
 const ledRing = new THREE.Group();
 for(let i=0;i<24;i++) {
     const hue = i/24;
@@ -608,14 +677,12 @@ for(let i=0;i<24;i++) {
 }
 ufo.add(ledRing);
 
-// アンテナ
 const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.12,2.5,8), new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.9,emissive:0x222222,emissiveIntensity:0.3}));
 antenna.position.y = 3.5; ufo.add(antenna);
 const antennaTop = new THREE.Mesh(new THREE.SphereGeometry(0.28,8,8), new THREE.MeshBasicMaterial({color:0xff4444}));
 antennaTop.position.y = 4.8; ufo.add(antennaTop);
 
-// UFO下部グロー板（地面を照らすディスク状光）
-const glowDiscMat = new THREE.MeshBasicMaterial({color:0x00ffcc,transparent:true,opacity:0.18,side:THREE.DoubleSide,depthWrite:false});
+const glowDiscMat = new THREE.MeshBasicMaterial({color:0x00ffcc,transparent:true,opacity:0.12,side:THREE.DoubleSide,depthWrite:false});
 const glowDisc = new THREE.Mesh(new THREE.CircleGeometry(7,48), glowDiscMat);
 glowDisc.rotation.x = Math.PI/2;
 glowDisc.position.y = -1.3;
@@ -625,64 +692,51 @@ ufo.position.set(0, 55, 0);
 scene.add(ufo);
 
 // ======================================================
-// UFO LIGHTING SYSTEM — 多層ライト
+// UFO LIGHTING SYSTEM
 // ======================================================
-
-// 1) メインスポットライト（地面を強く照らす）
-const spotLight = new THREE.SpotLight(0x88ffcc, 3.5, 300, Math.PI/6, 0.35, 0);
+const spotLight = new THREE.SpotLight(0x88ffcc, 2.0, 250, Math.PI/6, 0.4, 0);
 scene.add(spotLight); spotLight.castShadow = true;
 spotLight.shadow.mapSize.set(1024,1024);
 const lightTarget = new THREE.Object3D(); scene.add(lightTarget);
 spotLight.target = lightTarget;
 
-// 2) UFO周囲の環境ポイントライト（UFO自体を発光させる）
-const ufoPointLight = new THREE.PointLight(0x00ffcc, 4, 80);
+const ufoPointLight = new THREE.PointLight(0x00ffcc, 2.5, 70);
 scene.add(ufoPointLight);
-
-// 3) UFO下面のグロー地面照明（広め）
-const ufoGroundLight = new THREE.PointLight(0x33ffaa, 2.5, 150);
+const ufoGroundLight = new THREE.PointLight(0x33ffaa, 1.5, 120);
 scene.add(ufoGroundLight);
-
-// 4) LEDカラーアクセントライト
-const ufoColorLight1 = new THREE.PointLight(0xff44cc, 2, 70);
-const ufoColorLight2 = new THREE.PointLight(0x44ccff, 2, 70);
+const ufoColorLight1 = new THREE.PointLight(0xff44cc, 1.2, 60);
+const ufoColorLight2 = new THREE.PointLight(0x44ccff, 1.2, 60);
 scene.add(ufoColorLight1);
 scene.add(ufoColorLight2);
 
 // ======================================================
-// BEAM — 多層グロービーム
+// ABDUCT BEAM — cylindrical green semi-transparent
 // ======================================================
-
-// 最外層: 広い薄いコーン
+// All cylinders: uniform top & bottom radius = true cylinder (not cone)
 const beamOuter = new THREE.Mesh(
-    new THREE.CylinderGeometry(7, 10, 55, 32, 1, true),
-    new THREE.MeshBasicMaterial({color:0x00ff99,transparent:true,opacity:0.04,side:THREE.DoubleSide,depthWrite:false})
+    new THREE.CylinderGeometry(4.5, 4.5, 55, 32, 1, true),
+    new THREE.MeshBasicMaterial({color:0x00cc33,transparent:true,opacity:0.04,side:THREE.DoubleSide,depthWrite:false})
 );
-// 中間層: 中程度の輝き
 const beamMid = new THREE.Mesh(
-    new THREE.CylinderGeometry(3.5, 6, 55, 24, 1, true),
-    new THREE.MeshBasicMaterial({color:0x44ffcc,transparent:true,opacity:0.08,side:THREE.DoubleSide,depthWrite:false})
+    new THREE.CylinderGeometry(2.2, 2.2, 55, 24, 1, true),
+    new THREE.MeshBasicMaterial({color:0x22ff55,transparent:true,opacity:0.09,side:THREE.DoubleSide,depthWrite:false})
 );
-// 内層: 強い芯
 const beamInner = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.8, 2, 55, 16, 1, true),
-    new THREE.MeshBasicMaterial({color:0xaaffee,transparent:true,opacity:0.18,side:THREE.DoubleSide,depthWrite:false})
+    new THREE.CylinderGeometry(0.9, 0.9, 55, 16, 1, true),
+    new THREE.MeshBasicMaterial({color:0x88ffaa,transparent:true,opacity:0.20,side:THREE.DoubleSide,depthWrite:false})
 );
-// 最芯: 白く輝くコア
 const beamCore = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.2, 0.6, 55, 10, 1, true),
-    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false})
+    new THREE.CylinderGeometry(0.28, 0.28, 55, 10, 1, true),
+    new THREE.MeshBasicMaterial({color:0xccffcc,transparent:true,opacity:0.32,side:THREE.DoubleSide,depthWrite:false})
 );
-// ビーム地面着弾グロー
-const beamGlowMat = new THREE.MeshBasicMaterial({color:0x00ffcc,transparent:true,opacity:0.25,side:THREE.DoubleSide,depthWrite:false});
-const beamGlow = new THREE.Mesh(new THREE.CircleGeometry(9,48), beamGlowMat);
+const beamGlowMat = new THREE.MeshBasicMaterial({color:0x00ff55,transparent:true,opacity:0.20,side:THREE.DoubleSide,depthWrite:false});
+const beamGlow = new THREE.Mesh(new THREE.CircleGeometry(6,48), beamGlowMat);
 beamGlow.rotation.x = -Math.PI/2;
-beamGlow.position.y = -27.4; // ビームグループ原点から地面へ
+beamGlow.position.y = -27.4;
 
-// ビームに沿ったポイントライト群（上・中・下）
-const beamLight1 = new THREE.PointLight(0x00ffcc, 6, 40);  // ビーム上部
-const beamLight2 = new THREE.PointLight(0x44ffaa, 5, 35);  // ビーム中部
-const beamLight3 = new THREE.PointLight(0x88ffdd, 8, 55);  // 地面着弾光
+const beamLight1 = new THREE.PointLight(0x00ff44, 0, 30);
+const beamLight2 = new THREE.PointLight(0x44ff88, 0, 25);
+const beamLight3 = new THREE.PointLight(0x66ffaa, 0, 40);
 beamLight1.position.y = 15;
 beamLight2.position.y = 0;
 beamLight3.position.y = -25;
@@ -692,7 +746,216 @@ beamGroup.add(beamOuter, beamMid, beamInner, beamCore, beamGlow, beamLight1, bea
 scene.add(beamGroup);
 
 // ======================================================
-// TARGETS — 拡張版
+// ATTACK BEAM — red laser, SPACE key
+// ======================================================
+const attackBeamLen = 200;
+const atkBeamMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.25, 0.25, attackBeamLen, 10, 1, false),
+    new THREE.MeshBasicMaterial({color:0xff2200, transparent:true, opacity:0.85, depthWrite:false})
+);
+const atkBeamGlow = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.7, 0.7, attackBeamLen, 10, 1, true),
+    new THREE.MeshBasicMaterial({color:0xff6600, transparent:true, opacity:0.25, side:THREE.DoubleSide, depthWrite:false})
+);
+const attackBeamGroup = new THREE.Group();
+attackBeamGroup.add(atkBeamMesh, atkBeamGlow);
+attackBeamGroup.visible = false;
+scene.add(attackBeamGroup);
+
+let attackBeamTimer = 0;
+let attackCooldown = 0;
+const _atkDir = new THREE.Vector3();
+const _atkMid = new THREE.Vector3();
+const _yAxis = new THREE.Vector3(0,1,0);
+
+function fireAttackBeam() {
+    if(attackCooldown > 0) return;
+    attackCooldown = 0.8;
+    attackBeamTimer = 0.3;
+
+    // Find nearest Apache
+    let nearest = null, nearestDist = Infinity;
+    apaches.forEach(ap => {
+        const d = ufo.position.distanceTo(ap.mesh.position);
+        if(d < nearestDist) { nearestDist = d; nearest = ap; }
+    });
+
+    let targetPos;
+    if(nearest && nearestDist < 300) {
+        targetPos = nearest.mesh.position.clone();
+        nearest.hp -= 1;
+        if(nearest.hp <= 0) {
+            createExplosion(nearest.mesh.position.clone());
+            scene.remove(nearest.mesh);
+            apaches.splice(apaches.indexOf(nearest), 1);
+            score += 5000;
+            document.getElementById('score').textContent = score;
+            showNotif('APACHE DOWN! +5000');
+        } else {
+            // flash red
+            nearest.flashTimer = 0.2;
+        }
+    } else {
+        // Fire toward ground ahead of UFO
+        targetPos = new THREE.Vector3(ufo.position.x, 0, ufo.position.z - 60);
+    }
+
+    // Orient beam from UFO to target
+    _atkDir.subVectors(targetPos, ufo.position);
+    const len = _atkDir.length();
+    _atkDir.normalize();
+    _atkMid.copy(ufo.position).addScaledVector(_atkDir, len/2);
+    attackBeamGroup.position.copy(_atkMid);
+    attackBeamGroup.scale.y = len / attackBeamLen;
+    attackBeamGroup.quaternion.setFromUnitVectors(_yAxis, _atkDir);
+    attackBeamGroup.visible = true;
+}
+
+// ======================================================
+// APACHE HELICOPTER
+// ======================================================
+const apaches = [];
+let apacheSpawnTimer = 0;
+const APACHE_SPAWN_INTERVAL = 60; // seconds
+let ufoHP = 100;
+let apacheWarningTimer = 0;
+
+function makeApacheModel() {
+    const g = new THREE.Group();
+    const armyGreen = getMat(0x2d4a1e, 0.8);
+    const darkGreen  = getMat(0x1a2e12, 0.85);
+    const cockpitMat = new THREE.MeshStandardMaterial({color:0x1a3028,transparent:true,opacity:0.75,metalness:0.3,roughness:0.2});
+
+    // Main fuselage
+    const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 0.7, 8, 10), armyGreen);
+    fuselage.rotation.z = Math.PI/2;
+    fuselage.castShadow = true; g.add(fuselage);
+
+    // Cockpit
+    const cockpit = new THREE.Mesh(new THREE.SphereGeometry(1.4,12,8), cockpitMat);
+    cockpit.position.set(3.5, 0.2, 0);
+    cockpit.scale.set(0.9, 0.65, 0.75);
+    g.add(cockpit);
+
+    // Nose gun
+    const gun = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.12,2,6), getMat(0x222222,0.8));
+    gun.rotation.z = Math.PI/2;
+    gun.position.set(5.2,-0.5,0); g.add(gun);
+
+    // Tail boom
+    const tailBoom = new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.7,5,8), armyGreen);
+    tailBoom.rotation.z = Math.PI/2;
+    tailBoom.position.set(-5.5, 0.6, 0); g.add(tailBoom);
+
+    // Tail fin
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.2,2.2,1.2), darkGreen);
+    fin.position.set(-7.8, 1.4, 0); g.add(fin);
+    const finH = new THREE.Mesh(new THREE.BoxGeometry(2.0,0.2,0.8), darkGreen);
+    finH.position.set(-7.5, 0.6, 0); g.add(finH);
+
+    // Main rotor hub
+    const rotorHub = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.4,8), getMat(0x333333,0.8));
+    rotorHub.position.set(0,1.3,0); g.add(rotorHub);
+
+    // Main rotor blades (group for spinning)
+    const mainRotor = new THREE.Group();
+    mainRotor.position.set(0,1.5,0);
+    for(let i=0;i<2;i++) {
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(9,0.1,0.55), darkGreen);
+        blade.rotation.y = i*Math.PI/2;
+        mainRotor.add(blade);
+    }
+    g.add(mainRotor);
+
+    // Tail rotor
+    const tailRotor = new THREE.Group();
+    tailRotor.position.set(-8.0, 1.2, 0.6);
+    for(let i=0;i<2;i++) {
+        const tblade = new THREE.Mesh(new THREE.BoxGeometry(0.1,2.0,0.25), darkGreen);
+        tblade.rotation.x = i*Math.PI/2;
+        tailRotor.add(tblade);
+    }
+    g.add(tailRotor);
+
+    // Weapon pylons
+    [-0.9,0.9].forEach(oz => {
+        const pylon = new THREE.Mesh(new THREE.BoxGeometry(3.5,0.25,0.25), darkGreen);
+        pylon.position.set(0.5,-1.0,oz); g.add(pylon);
+        // missile pod
+        const pod = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.45,0.5), getMat(0x444434,0.8));
+        pod.position.set(2.0,-1.0,oz); g.add(pod);
+        // missiles
+        [-0.15,0.15].forEach(mox => {
+            const mis = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,1.0,6), getMat(0x556644,0.8));
+            mis.rotation.z = Math.PI/2;
+            mis.position.set(2.6,-1.0,oz+mox); g.add(mis);
+        });
+    });
+
+    // Landing gear
+    [-1.5,1.5].forEach(oz => {
+        const gear = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,2.5,6), getMat(0x333333,0.9));
+        gear.rotation.z = Math.PI/2;
+        gear.position.set(0,-1.5,oz); g.add(gear);
+    });
+
+    return { mesh: g, mainRotor, tailRotor };
+}
+
+function spawnApache() {
+    // Spawn at edge of visible area
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 180 + Math.random() * 60;
+    const ax = ufo.position.x + Math.cos(angle) * dist;
+    const az = ufo.position.z + Math.sin(angle) * dist;
+    const ay = 45 + Math.random() * 20;
+
+    const apacheObj = makeApacheModel();
+    apacheObj.mesh.position.set(ax, ay, az);
+    scene.add(apacheObj.mesh);
+
+    apaches.push({
+        mesh: apacheObj.mesh,
+        mainRotor: apacheObj.mainRotor,
+        tailRotor: apacheObj.tailRotor,
+        hp: 3,
+        shootTimer: 2 + Math.random() * 2,
+        flashTimer: 0,
+    });
+
+    // Show warning
+    apacheWarningTimer = 3.0;
+    const warningEl = document.getElementById('apache-warning');
+    warningEl.style.opacity = '1';
+}
+
+function createExplosion(pos) {
+    const flash = new THREE.PointLight(0xff6600, 25, 100);
+    flash.position.copy(pos);
+    scene.add(flash);
+    // Debris particles
+    for(let i=0;i<8;i++) {
+        const debris = new THREE.Mesh(
+            new THREE.BoxGeometry(0.5,0.5,0.5),
+            new THREE.MeshBasicMaterial({color:0xff4400})
+        );
+        debris.position.copy(pos);
+        scene.add(debris);
+        const vx = (Math.random()-0.5)*4, vy = Math.random()*3+1, vz=(Math.random()-0.5)*4;
+        let t=0;
+        const tick = setInterval(()=>{
+            t+=0.016;
+            debris.position.x+=vx*0.016; debris.position.y+=vy*0.016-0.05*t;
+            debris.position.z+=vz*0.016;
+            debris.rotation.x+=0.1; debris.rotation.z+=0.08;
+            flash.intensity *= 0.9;
+            if(t>1.5){clearInterval(tick);scene.remove(debris);scene.remove(flash);}
+        },16);
+    }
+}
+
+// ======================================================
+// TARGETS — 吸い込み対象（明るいトーン）
 // ======================================================
 const targets = [];
 let score = 0, abductCount = 0;
@@ -701,64 +964,85 @@ const clock = new THREE.Clock();
 const keys = {};
 let isAbducting = false;
 
-// ===== ターゲット定義 =====
 const TARGET_DEFS = [
-    // 人間（職業バリエーション）
-    { type:'human', title:'会社員', icon:'👔', score:100, shirt:0x1a3a6e, pants:0x222244, skin:0xf5c5a0, hair:0x221100 },
-    { type:'human', title:'ギャング', icon:'🔫', score:250, shirt:0x111111, pants:0x111111, skin:0xc87840, hair:0x000000 },
-    { type:'human', title:'大統領', icon:'🇺🇸', score:5000, shirt:0x002868, pants:0xBF0A30, skin:0xf0d0a0, hair:0xdddddd },
-    { type:'human', title:'詐欺師', icon:'🃏', score:350, shirt:0xaa8833, pants:0x332211, skin:0xf5c5a0, hair:0x554422 },
-    { type:'human', title:'殺し屋', icon:'🗡️', score:400, shirt:0x111122, pants:0x111111, skin:0xd0b090, hair:0x111111 },
-    { type:'human', title:'配達員', icon:'📦', score:150, shirt:0x884400, pants:0x334433, skin:0xf5c5a0, hair:0x442200 },
-    { type:'human', title:'警察官', icon:'👮', score:300, shirt:0x002255, pants:0x001133, skin:0xf5c5a0, hair:0x221100 },
-    { type:'human', title:'消防士', icon:'🚒', score:300, shirt:0xdd2200, pants:0x221100, skin:0xf0c090, hair:0x442200 },
-    { type:'human', title:'医者', icon:'👨‍⚕️', score:400, shirt:0xffffff, pants:0xdddddd, skin:0xf5c5a0, hair:0x221100 },
-    { type:'human', title:'地面師', icon:'📋', score:600, shirt:0x225588, pants:0x223355, skin:0xf5c5a0, hair:0x442200 },
-    { type:'human', title:'大学生', icon:'🎓', score:80,  shirt:0x4477cc, pants:0x222244, skin:0xf5c5a0, hair:0x221100 },
-    { type:'human', title:'ホームレス', icon:'🛖', score:50,  shirt:0x886644, pants:0x554433, skin:0xc8a070, hair:0x332211 },
-    { type:'human', title:'サーファー', icon:'🏄', score:120, shirt:0x00aaff, pants:0xff8800, skin:0xd4a060, hair:0xddaa33 },
-    { type:'human', title:'テキサス農夫', icon:'🤠', score:150, shirt:0xcc8844, pants:0x4477aa, skin:0xe0b080, hair:0x885522 },
-    { type:'human', title:'ロック歌手', icon:'🎸', score:500, shirt:0x000000, pants:0x111111, skin:0xf5c5a0, hair:0x000000 },
-    // 動物
-    { type:'cow',     title:'牛',           icon:'🐄', score:500  },
-    { type:'horse',   title:'馬',           icon:'🐎', score:600  },
-    { type:'bear',    title:'グリズリー',   icon:'🐻', score:1200 },
-    { type:'wolf',    title:'オオカミ',     icon:'🐺', score:900  },
-    { type:'deer',    title:'シカ',         icon:'🦌', score:400  },
-    { type:'eagle',   title:'ハクトウワシ', icon:'🦅', score:800  },
-    { type:'bison',   title:'バッファロー', icon:'🦬', score:1000 },
-    { type:'raccoon', title:'アライグマ',   icon:'🦝', score:300  },
-    { type:'turkey',  title:'七面鳥',       icon:'🦃', score:250  },
-    { type:'alligator',title:'アリゲーター',icon:'🐊', score:1500 },
-    // 乗り物
-    { type:'car',    title:'マスタング',   icon:'🚗', score:2000 },
-    { type:'truck',  title:'ピックアップトラック', icon:'🚛', score:3000 },
-    { type:'bus',    title:'スクールバス', icon:'🚌', score:4000 },
+    { type:'human', title:'会社員',   icon:'👔', score:100, shirt:0x2255aa, pants:0x334466, skin:0xf5c5a0, hair:0x221100 },
+    { type:'human', title:'ギャング', icon:'🔫', score:250, shirt:0x222222, pants:0x111111, skin:0xd08840, hair:0x000000 },
+    { type:'human', title:'大統領',   icon:'🇺🇸', score:5000, shirt:0x0044bb, pants:0xcc0022, skin:0xf0d0a0, hair:0xdddddd },
+    { type:'human', title:'詐欺師',   icon:'🃏', score:350, shirt:0xddaa44, pants:0x442211, skin:0xf5c5a0, hair:0x664422 },
+    { type:'human', title:'殺し屋',   icon:'🗡️', score:400, shirt:0x223366, pants:0x111122, skin:0xd0b090, hair:0x111111 },
+    { type:'human', title:'配達員',   icon:'📦', score:150, shirt:0xcc6600, pants:0x334433, skin:0xf5c5a0, hair:0x442200 },
+    { type:'human', title:'警察官',   icon:'👮', score:300, shirt:0x1133aa, pants:0x001133, skin:0xf5c5a0, hair:0x221100 },
+    { type:'human', title:'消防士',   icon:'🚒', score:300, shirt:0xff3300, pants:0x331100, skin:0xf0c090, hair:0x442200 },
+    { type:'human', title:'医者',     icon:'👨‍⚕️', score:400, shirt:0xffffff, pants:0xdddddd, skin:0xf5c5a0, hair:0x221100 },
+    { type:'human', title:'地面師',   icon:'📋', score:600, shirt:0x3366cc, pants:0x334466, skin:0xf5c5a0, hair:0x442200 },
+    { type:'human', title:'大学生',   icon:'🎓', score:80,  shirt:0x5588ff, pants:0x333366, skin:0xf5c5a0, hair:0x221100 },
+    { type:'human', title:'ホームレス',icon:'🛖', score:50, shirt:0x997755, pants:0x665544, skin:0xc8a070, hair:0x332211 },
+    { type:'human', title:'サーファー',icon:'🏄', score:120, shirt:0x00aaff, pants:0xff8800, skin:0xd4a060, hair:0xddaa33 },
+    { type:'human', title:'農夫',     icon:'🤠', score:150, shirt:0xdd9944, pants:0x5588bb, skin:0xe0b080, hair:0x885522 },
+    { type:'human', title:'ロック歌手',icon:'🎸', score:500, shirt:0x110011, pants:0x111111, skin:0xf5c5a0, hair:0x000000 },
+    // 野生動物
+    { type:'cow',      title:'牛',           icon:'🐄', score:500  },
+    { type:'horse',    title:'馬',           icon:'🐎', score:600  },
+    { type:'bear',     title:'グリズリー',   icon:'🐻', score:1200 },
+    { type:'wolf',     title:'オオカミ',     icon:'🐺', score:900  },
+    { type:'deer',     title:'シカ',         icon:'🦌', score:400  },
+    { type:'eagle',    title:'ハクトウワシ', icon:'🦅', score:800  },
+    { type:'bison',    title:'バッファロー', icon:'🦬', score:1000 },
+    { type:'raccoon',  title:'アライグマ',   icon:'🦝', score:300  },
+    { type:'turkey',   title:'七面鳥',       icon:'🦃', score:250  },
+    { type:'alligator',title:'アリゲーター', icon:'🐊', score:1500 },
+    // 乗り物（都会のみ）
+    { type:'car',   title:'マスタング',       icon:'🚗', score:2000 },
+    { type:'truck', title:'ピックアップトラック',icon:'🚛', score:3000 },
+    { type:'bus',   title:'スクールバス',     icon:'🚌', score:4000 },
 ];
 
 function getRandomDef(biome) {
-    // バイオームに応じてターゲット重みを変える
-    const humans = TARGET_DEFS.filter(d=>d.type==='human');
-    const animals = TARGET_DEFS.filter(d=>['cow','horse','bear','wolf','deer','eagle','bison','raccoon','turkey','alligator'].includes(d.type));
-    const vehicles = TARGET_DEFS.filter(d=>['car','truck','bus'].includes(d.type));
+    const humans    = TARGET_DEFS.filter(d=>d.type==='human');
+    const wildAnims = TARGET_DEFS.filter(d=>['bear','wolf','deer','eagle','bison','raccoon','turkey','alligator'].includes(d.type));
+    const farmAnims = TARGET_DEFS.filter(d=>['cow','horse'].includes(d.type));
+    const vehicles  = TARGET_DEFS.filter(d=>['car','truck','bus'].includes(d.type));
 
     let pool;
-    if(biome===BIOME.URBAN || biome===BIOME.SUBURB) pool = [...humans,...humans,...vehicles];
-    else if(biome===BIOME.FARMLAND || biome===BIOME.GRASSLAND) pool = [...animals,...animals,...humans];
-    else if(biome===BIOME.FOREST || biome===BIOME.MOUNTAIN) pool = [...animals,...animals,...animals,...humans];
-    else if(biome===BIOME.INDUSTRIAL) pool = [...humans,...vehicles,...vehicles];
-    else pool = [...humans,...animals,...vehicles];
+    if(biome===BIOME.URBAN)
+        pool = [...humans,...humans,...humans,...vehicles,...vehicles];
+    else if(biome===BIOME.SUBURB)
+        pool = [...humans,...humans,...vehicles];
+    else if(biome===BIOME.INDUSTRIAL)
+        pool = [...humans,...vehicles,...vehicles];
+    else if(biome===BIOME.FOREST)
+        pool = [...wildAnims,...wildAnims,...wildAnims,...wildAnims,...humans.slice(0,2)];
+    else if(biome===BIOME.MOUNTAIN)
+        pool = [...wildAnims,...wildAnims,...wildAnims,...humans.slice(0,1)];
+    else if(biome===BIOME.GRASSLAND)
+        pool = [...wildAnims,...wildAnims,...farmAnims,...humans.slice(10,13)];
+    else if(biome===BIOME.FARMLAND)
+        pool = [...farmAnims,...farmAnims,...farmAnims,...wildAnims,...humans.slice(11,14)];
+    else if(biome===BIOME.BEACH)
+        pool = [...humans.slice(11,13),...wildAnims.slice(0,3)];
+    else
+        pool = [...humans,...wildAnims];
 
     return pool[Math.floor(Math.random()*pool.length)];
 }
 
-// ===== 3Dモデル =====
+// === Target mesh builders (brighter/vivid tones) ===
+function getMatBright(color, roughness=0.8) {
+    // Slightly luminous material for targets
+    const key = `bright_${color}_${roughness}`;
+    if(!matCache.has(key)) {
+        const m = new THREE.MeshStandardMaterial({color, roughness, metalness:0.0, emissive:new THREE.Color(color).multiplyScalar(0.15)});
+        matCache.set(key, m);
+    }
+    return matCache.get(key);
+}
+
 function createHuman(def) {
     const g = new THREE.Group();
-    const skin = getMat(def.skin||0xf5c5a0, 0.8);
-    const shirt = getMat(def.shirt||0x4477cc, 0.9);
-    const pants = getMat(def.pants||0x222244, 0.9);
-    const hair  = getMat(def.hair||0x221100, 1.0);
+    const skin = getMatBright(def.skin||0xf5c5a0, 0.8);
+    const shirt = getMatBright(def.shirt||0x4477cc, 0.9);
+    const pants = getMatBright(def.pants||0x222244, 0.9);
+    const hair  = getMatBright(def.hair||0x221100, 1.0);
     [-0.22,0.22].forEach(ox => {
         const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.14,1.0,8), pants);
         leg.position.set(ox,0.5,0); leg.castShadow=true; g.add(leg);
@@ -773,13 +1057,12 @@ function createHuman(def) {
         const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.09,0.9,8), shirt);
         arm.position.set(ox,1.65,0); arm.rotation.z = ox>0?-0.3:0.3; arm.castShadow=true; g.add(arm);
     });
-    // 職業アクセサリー
     if(def.title==='警察官') {
         const badge = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,0.05,6), new THREE.MeshStandardMaterial({color:0xffdd00,metalness:0.9}));
         badge.position.set(0.15,1.8,0.33); g.add(badge);
     }
     if(def.title==='大統領') {
-        const tie = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.6,0.05), new THREE.MeshStandardMaterial({color:0xcc0000}));
+        const tie = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.6,0.05), new THREE.MeshStandardMaterial({color:0xff2222}));
         tie.position.set(0,1.5,0.33); g.add(tie);
     }
     return g;
@@ -787,270 +1070,266 @@ function createHuman(def) {
 
 function createCow() {
     const g = new THREE.Group();
-    const bMat = getMat(0xeeeeee,0.9), sMat = getMat(0x222222,0.9), hMat = getMat(0xddddcc,0.9);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(2.2,1.2,1.0), bMat);
+    const bMat=getMatBright(0xeeeeee,0.9),sMat=getMatBright(0x222222,0.9),hMat=getMatBright(0xddddcc,0.9);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.2,1.0),bMat);
     body.position.y=1.6; body.castShadow=true; g.add(body);
-    const spot = new THREE.Mesh(new THREE.SphereGeometry(0.45,8,8), sMat);
+    const spot=new THREE.Mesh(new THREE.SphereGeometry(0.45,8,8),sMat);
     spot.position.set(0.3,1.8,0.52); spot.scale.z=0.15; g.add(spot);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.9,0.8,0.8), hMat);
+    const head=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.8,0.8),hMat);
     head.position.set(1.4,1.7,0); head.castShadow=true; g.add(head);
-    const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.25,0.25,8), getMat(0xffaaaa,0.9));
+    const nose=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.25,0.25,8),getMatBright(0xffaaaa,0.9));
     nose.rotation.z=Math.PI/2; nose.position.set(1.9,1.55,0); g.add(nose);
     [0.15,-0.15].forEach(oz=>{
-        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.07,0.5,6), getMat(0xddbb77,0.8));
+        const horn=new THREE.Mesh(new THREE.ConeGeometry(0.07,0.5,6),getMatBright(0xddbb77,0.8));
         horn.position.set(1.3,2.25,oz); horn.rotation.z=Math.PI; g.add(horn);
     });
     [[-0.7,-0.3],[0.7,-0.3],[-0.7,0.3],[0.7,0.3]].forEach(([lx,lz])=>{
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.14,1.1,8), bMat);
+        const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.14,1.1,8),bMat);
         leg.position.set(lx,0.55,lz); leg.castShadow=true; g.add(leg);
     });
     return g;
 }
 
 function createHorse() {
-    const g = new THREE.Group();
-    const mat = getMat(0x7a4010,0.9);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(3.0,1.4,1.0), mat);
+    const g=new THREE.Group();
+    const mat=getMatBright(0x9a5820,0.9);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(3.0,1.4,1.0),mat);
     body.position.y=2.0; g.add(body);
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.4,1.5,8), mat);
+    const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.4,1.5,8),mat);
     neck.position.set(1.6,2.8,0); neck.rotation.z=0.4; g.add(neck);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(1.0,0.7,0.6), mat);
+    const head=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.7,0.6),mat);
     head.position.set(2.3,3.4,0); g.add(head);
-    const mane = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.8,0.1), getMat(0x331100,1.0));
+    const mane=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.8,0.1),getMatBright(0x221100,1.0));
     mane.position.set(1.8,3.2,0); g.add(mane);
     [[-1.0,-0.35],[0.8,-0.35],[-1.0,0.35],[0.8,0.35]].forEach(([lx,lz])=>{
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.15,1.6,8), mat);
+        const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.15,1.6,8),mat);
         leg.position.set(lx,0.8,lz); g.add(leg);
     });
     return g;
 }
 
 function createBear() {
-    const g = new THREE.Group();
-    const mat = getMat(0x5a3010,0.95);
-    const body = new THREE.Mesh(new THREE.SphereGeometry(1.4,10,8), mat);
+    const g=new THREE.Group();
+    const mat=getMatBright(0x7a4020,0.95);
+    const body=new THREE.Mesh(new THREE.SphereGeometry(1.4,10,8),mat);
     body.position.y=2.2; body.scale.set(1,0.9,0.8); body.castShadow=true; g.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.8,10,8), mat);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.8,10,8),mat);
     head.position.set(1.4,3.0,0); head.castShadow=true; g.add(head);
-    const snout = new THREE.Mesh(new THREE.SphereGeometry(0.3,8,8), getMat(0x8a6040,0.9));
+    const snout=new THREE.Mesh(new THREE.SphereGeometry(0.3,8,8),getMatBright(0xaa7050,0.9));
     snout.position.set(2.1,2.8,0); snout.scale.z=0.6; g.add(snout);
     [0.2,-0.2].forEach(oz=>{
-        const ear = new THREE.Mesh(new THREE.SphereGeometry(0.2,8,6), mat);
+        const ear=new THREE.Mesh(new THREE.SphereGeometry(0.2,8,6),mat);
         ear.position.set(1.2,3.7,oz); g.add(ear);
     });
     [[-0.8,-0.45],[0.8,-0.45],[-0.8,0.45],[0.8,0.45]].forEach(([lx,lz])=>{
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.28,1.2,8), mat);
+        const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.28,1.2,8),mat);
         leg.position.set(lx,0.6,lz); g.add(leg);
     });
     return g;
 }
 
 function createWolf() {
-    const g = new THREE.Group();
-    const mat = getMat(0x778899,0.9);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(2.0,0.9,0.7), mat);
+    const g=new THREE.Group();
+    const mat=getMatBright(0x8899aa,0.9);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.9,0.7),mat);
     body.position.y=1.6; g.add(body);
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.28,0.6,8), mat);
+    const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.28,0.6,8),mat);
     neck.position.set(1.1,2.0,0); neck.rotation.z=0.5; g.add(neck);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.55,0.5), mat);
+    const head=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.55,0.5),mat);
     head.position.set(1.5,2.4,0); g.add(head);
-    const snout = new THREE.Mesh(new THREE.BoxGeometry(0.35,0.3,0.4), getMat(0x667788,0.9));
+    const snout=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.3,0.4),getMatBright(0x778899,0.9));
     snout.position.set(1.9,2.25,0); g.add(snout);
     [0.15,-0.15].forEach(oz=>{
-        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.08,0.3,4), mat);
+        const ear=new THREE.Mesh(new THREE.ConeGeometry(0.08,0.3,4),mat);
         ear.position.set(1.35,2.75,oz); g.add(ear);
     });
     [[-0.65,-0.25],[0.65,-0.25],[-0.65,0.25],[0.65,0.25]].forEach(([lx,lz])=>{
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.08,0.9,8), mat);
+        const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.08,0.9,8),mat);
         leg.position.set(lx,0.45,lz); g.add(leg);
     });
-    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.03,0.9,6), mat);
+    const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.03,0.9,6),mat);
     tail.position.set(-1.2,1.8,0); tail.rotation.z=0.8; g.add(tail);
     return g;
 }
 
 function createDeer() {
-    const g = new THREE.Group();
-    const mat = getMat(0xc07830,0.9);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(2.2,1.0,0.8), mat);
+    const g=new THREE.Group();
+    const mat=getMatBright(0xe09040,0.9);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.0,0.8),mat);
     body.position.y=1.8; g.add(body);
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.25,1.0,8), mat);
+    const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.25,1.0,8),mat);
     neck.position.set(1.1,2.5,0); neck.rotation.z=0.4; g.add(neck);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.55,0.5), mat);
+    const head=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.55,0.5),mat);
     head.position.set(1.6,3.1,0); g.add(head);
-    // 枝角
-    [0.15,-0.15].forEach((oz,i) => {
-        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,0.8,6), getMat(0xaa8833,0.9));
+    [0.15,-0.15].forEach((oz,i)=>{
+        const base=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,0.8,6),getMatBright(0xcc9944,0.9));
         base.position.set(1.35,3.65,oz); g.add(base);
-        const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.06,0.5,6), getMat(0xaa8833,0.9));
+        const branch=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.06,0.5,6),getMatBright(0xcc9944,0.9));
         branch.position.set(1.2+oz*0.5,4.1,oz); branch.rotation.z=0.6*(i===0?1:-1); g.add(branch);
     });
     [[-0.75,-0.3],[0.75,-0.3],[-0.75,0.3],[0.75,0.3]].forEach(([lx,lz])=>{
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.08,1.4,8), mat);
+        const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.08,1.4,8),mat);
         leg.position.set(lx,0.7,lz); g.add(leg);
     });
     return g;
 }
 
 function createEagle() {
-    const g = new THREE.Group();
-    const mat = getMat(0x3a2508,0.85);
-    const wMat = getMat(0x1a1005,0.85);
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.6,10,8), mat);
+    const g=new THREE.Group();
+    const mat=getMatBright(0x3a2508,0.85);
+    const wMat=getMatBright(0x1a1005,0.85);
+    const body=new THREE.Mesh(new THREE.SphereGeometry(0.6,10,8),mat);
     body.position.y=1.5; body.scale.set(1,0.9,1.2); g.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.35,10,8), getMat(0xffffff,0.8));
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.35,10,8),getMatBright(0xffffff,0.8));
     head.position.y=2.25; g.add(head);
-    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.07,0.35,6), getMat(0xffcc00,0.7));
+    const beak=new THREE.Mesh(new THREE.ConeGeometry(0.07,0.35,6),getMatBright(0xffcc00,0.7));
     beak.position.set(0.35,2.2,0); beak.rotation.z=-Math.PI/2; g.add(beak);
-    // 翼
     [-1,1].forEach(s=>{
-        const wing = new THREE.Mesh(new THREE.BoxGeometry(2.0,0.1,0.6), wMat);
+        const wing=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.1,0.6),wMat);
         wing.position.set(s*1.1,1.5,0); wing.rotation.z=s*0.2; g.add(wing);
     });
     return g;
 }
 
 function createBison() {
-    const g = new THREE.Group();
-    const mat = getMat(0x2a1a08,0.95);
-    const body = new THREE.Mesh(new THREE.SphereGeometry(1.5,10,8), mat);
+    const g=new THREE.Group();
+    const mat=getMatBright(0x3a2010,0.95);
+    const body=new THREE.Mesh(new THREE.SphereGeometry(1.5,10,8),mat);
     body.position.y=2.2; body.scale.set(1.4,1.0,0.9); body.castShadow=true; g.add(body);
-    const hump = new THREE.Mesh(new THREE.SphereGeometry(0.9,8,8), mat);
+    const hump=new THREE.Mesh(new THREE.SphereGeometry(0.9,8,8),mat);
     hump.position.set(0.5,3.2,0); g.add(hump);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(1.3,1.0,0.9), mat);
+    const head=new THREE.Mesh(new THREE.BoxGeometry(1.3,1.0,0.9),mat);
     head.position.set(2.0,2.5,0); g.add(head);
-    const beard = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.05,0.7,8), getMat(0x1a0a00,0.99));
+    const beard=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.05,0.7,8),getMatBright(0x221100,0.99));
     beard.position.set(2.3,1.7,0); g.add(beard);
     [0.2,-0.2].forEach(oz=>{
-        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.1,0.7,6), getMat(0x443322,0.9));
+        const horn=new THREE.Mesh(new THREE.ConeGeometry(0.1,0.7,6),getMatBright(0x554433,0.9));
         horn.position.set(2.0,3.15,oz); horn.rotation.z=0.5; g.add(horn);
     });
     [[-1.0,-0.4],[0.8,-0.4],[-1.0,0.4],[0.8,0.4]].forEach(([lx,lz])=>{
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.22,1.4,8), mat);
+        const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.22,1.4,8),mat);
         leg.position.set(lx,0.7,lz); g.add(leg);
     });
     return g;
 }
 
 function createRaccoon() {
-    const g = new THREE.Group();
-    const mat = getMat(0x888888,0.9);
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.5,8,8), mat);
+    const g=new THREE.Group();
+    const mat=getMatBright(0x9a9a9a,0.9);
+    const body=new THREE.Mesh(new THREE.SphereGeometry(0.5,8,8),mat);
     body.position.y=0.8; body.scale.set(1.2,0.9,0.9); g.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.38,8,8), mat);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.38,8,8),mat);
     head.position.y=1.45; g.add(head);
-    const mask = new THREE.Mesh(new THREE.BoxGeometry(0.55,0.2,0.1), getMat(0x111111,0.9));
+    const mask=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.2,0.1),getMatBright(0x111111,0.9));
     mask.position.set(0,1.5,0.38); g.add(mask);
     [0.15,-0.15].forEach(oz=>{
-        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.1,0.2,6), mat);
+        const ear=new THREE.Mesh(new THREE.ConeGeometry(0.1,0.2,6),mat);
         ear.position.set(0,1.78,oz); g.add(ear);
     });
-    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.05,0.9,8), getMat(0x666666,0.9));
+    const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.05,0.9,8),getMatBright(0x777777,0.9));
     tail.position.set(-0.65,0.8,0); tail.rotation.z=0.9; g.add(tail);
     [[-0.3,-0.2],[0.3,-0.2],[-0.3,0.2],[0.3,0.2]].forEach(([lx,lz])=>{
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.05,0.55,6), mat);
+        const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.05,0.55,6),mat);
         leg.position.set(lx,0.28,lz); g.add(leg);
     });
     return g;
 }
 
 function createTurkey() {
-    const g = new THREE.Group();
-    const mat = getMat(0x442200,0.9);
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.65,8,8), mat);
+    const g=new THREE.Group();
+    const mat=getMatBright(0x662200,0.9);
+    const body=new THREE.Mesh(new THREE.SphereGeometry(0.65,8,8),mat);
     body.position.y=1.0; body.scale.set(1.1,0.95,1.3); g.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22,8,8), getMat(0xdd3322,0.9));
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,8),getMatBright(0xff4433,0.9));
     head.position.set(0,1.8,0.7); g.add(head);
-    // 尾羽根（扇形）
-    for(let i=-3;i<=3;i++) {
-        const feather = new THREE.Mesh(new THREE.ConeGeometry(0.12,0.9,4), getMat(i%2===0?0x883300:0xcc5500,0.85));
+    for(let i=-3;i<=3;i++){
+        const feather=new THREE.Mesh(new THREE.ConeGeometry(0.12,0.9,4),getMatBright(i%2===0?0xcc4400:0xff6600,0.85));
         feather.position.set(0,1.3,-0.6);
-        feather.rotation.z = i*0.2; feather.rotation.x = 0.4; g.add(feather);
+        feather.rotation.z=i*0.2; feather.rotation.x=0.4; g.add(feather);
     }
     [[-0.2,0],[0.2,0]].forEach(([lx,lz])=>{
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.04,0.6,6), getMat(0xddaa44,0.9));
+        const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.04,0.6,6),getMatBright(0xeecc44,0.9));
         leg.position.set(lx,0.3,lz); g.add(leg);
     });
     return g;
 }
 
 function createAlligator() {
-    const g = new THREE.Group();
-    const mat = getMat(0x1a4a10,0.9);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(3.5,0.5,0.9), mat);
+    const g=new THREE.Group();
+    const mat=getMatBright(0x2a6618,0.9);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(3.5,0.5,0.9),mat);
     body.position.y=0.5; body.castShadow=true; g.add(body);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(1.5,0.35,0.75), mat);
+    const head=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.35,0.75),mat);
     head.position.set(2.4,0.55,0); g.add(head);
-    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.4,2.5,8), mat);
+    const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.4,2.5,8),mat);
     tail.position.set(-2.4,0.45,0); tail.rotation.z=Math.PI/2; g.add(tail);
-    // 歯
-    for(let i=0;i<5;i++) {
-        const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.04,0.2,4), new THREE.MeshStandardMaterial({color:0xffffff}));
+    for(let i=0;i<5;i++){
+        const tooth=new THREE.Mesh(new THREE.ConeGeometry(0.04,0.2,4),new THREE.MeshStandardMaterial({color:0xffffff}));
         tooth.position.set(1.8-i*0.3,0.6,(i%2===0?0.35:-0.35)); g.add(tooth);
     }
     [[-1.0,-0.38],[0.8,-0.38],[-1.0,0.38],[0.8,0.38]].forEach(([lx,lz])=>{
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.08,0.4,6), mat);
+        const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.08,0.4,6),mat);
         leg.position.set(lx,0.2,lz); leg.rotation.z=0.5; g.add(leg);
     });
     return g;
 }
 
 function createCar(color) {
-    const g = new THREE.Group();
-    const bMat = getMat(color||0xcc1111,0.3,0.6);
-    const gMat = new THREE.MeshStandardMaterial({color:0x224466,transparent:true,opacity:0.7,metalness:0.3});
-    const tMat = getMat(0x111111,0.9);
-    const bodyL = new THREE.Mesh(new THREE.BoxGeometry(4.0,0.8,1.8), bMat);
+    const g=new THREE.Group();
+    const bMat=new THREE.MeshStandardMaterial({color:color||0xee2222,roughness:0.2,metalness:0.7,emissive:new THREE.Color(color||0xee2222).multiplyScalar(0.08)});
+    const gMat=new THREE.MeshStandardMaterial({color:0x224466,transparent:true,opacity:0.7,metalness:0.3});
+    const tMat=getMat(0x111111,0.9);
+    const bodyL=new THREE.Mesh(new THREE.BoxGeometry(4.0,0.8,1.8),bMat);
     bodyL.position.y=0.65; bodyL.castShadow=true; g.add(bodyL);
-    const bodyH = new THREE.Mesh(new THREE.BoxGeometry(2.4,0.9,1.6), bMat);
+    const bodyH=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.9,1.6),bMat);
     bodyH.position.set(-0.1,1.5,0); bodyH.castShadow=true; g.add(bodyH);
-    const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.2,0.75), gMat);
+    const ws=new THREE.Mesh(new THREE.PlaneGeometry(1.2,0.75),gMat);
     ws.position.set(1.05,1.55,0); ws.rotation.y=Math.PI/2-0.3; g.add(ws);
     [[-1.3,-0.9],[1.3,-0.9],[-1.3,0.9],[1.3,0.9]].forEach(([tx,tz])=>{
-        const tire = new THREE.Mesh(new THREE.TorusGeometry(0.42,0.2,8,16), tMat);
+        const tire=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.2,8,16),tMat);
         tire.rotation.x=Math.PI/2; tire.position.set(tx,0.42,tz); tire.castShadow=true; g.add(tire);
-        const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.12,10), getMat(0xaaaaaa,0.2,0.8));
+        const rim=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.12,10),getMat(0xaaaaaa,0.2,0.8));
         rim.rotation.x=Math.PI/2; rim.position.set(tx,0.42,tz); g.add(rim);
     });
     return g;
 }
 
 function createTruck() {
-    const g = new THREE.Group();
-    const mat = getMat(0x3355aa,0.3,0.5);
-    const cab = new THREE.Mesh(new THREE.BoxGeometry(2.5,2.5,2.2), mat);
+    const g=new THREE.Group();
+    const mat=new THREE.MeshStandardMaterial({color:0x4466cc,roughness:0.25,metalness:0.6});
+    const cab=new THREE.Mesh(new THREE.BoxGeometry(2.5,2.5,2.2),mat);
     cab.position.set(2.8,1.25,0); cab.castShadow=true; g.add(cab);
-    const bed = new THREE.Mesh(new THREE.BoxGeometry(4.5,0.4,2.0), getMat(0x444444,0.9));
+    const bed=new THREE.Mesh(new THREE.BoxGeometry(4.5,0.4,2.0),getMat(0x555555,0.9));
     bed.position.set(-1.3,1.0,0); g.add(bed);
-    const bedWall = new THREE.Mesh(new THREE.BoxGeometry(4.5,1.0,0.15), getMat(0x333333,0.9));
+    const bedWall=new THREE.Mesh(new THREE.BoxGeometry(4.5,1.0,0.15),getMat(0x444444,0.9));
     bedWall.position.set(-1.3,1.5,0.97); g.add(bedWall);
     [[-2.5,-0.85],[1.8,-0.85],[2.8,-0.85],[-2.5,0.85],[1.8,0.85],[2.8,0.85]].forEach(([tx,tz])=>{
-        const tire = new THREE.Mesh(new THREE.TorusGeometry(0.5,0.22,8,16), getMat(0x111111,0.9));
+        const tire=new THREE.Mesh(new THREE.TorusGeometry(0.5,0.22,8,16),getMat(0x111111,0.9));
         tire.rotation.x=Math.PI/2; tire.position.set(tx,0.5,tz); g.add(tire);
     });
     return g;
 }
 
 function createBus() {
-    const g = new THREE.Group();
-    const mat = getMat(0xffcc00,0.3,0.3);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(8,2.8,2.4), mat);
+    const g=new THREE.Group();
+    const mat=new THREE.MeshStandardMaterial({color:0xffcc00,roughness:0.25,metalness:0.3,emissive:new THREE.Color(0xffcc00).multiplyScalar(0.05)});
+    const body=new THREE.Mesh(new THREE.BoxGeometry(8,2.8,2.4),mat);
     body.position.y=1.7; body.castShadow=true; g.add(body);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(8,0.4,2.4), getMat(0xeeaa00,0.5));
+    const roof=new THREE.Mesh(new THREE.BoxGeometry(8,0.4,2.4),getMat(0xeeaa00,0.5));
     roof.position.y=3.3; g.add(roof);
-    for(let i=-3;i<=3;i++) {
-        const win = new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.9), new THREE.MeshBasicMaterial({color:0x88ccff}));
+    for(let i=-3;i<=3;i++){
+        const win=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.9),new THREE.MeshBasicMaterial({color:0x88ccff}));
         win.position.set(i*1.1,2.0,1.21); g.add(win);
     }
     [[-2.5,-0.9],[2.5,-0.9],[-2.5,0.9],[2.5,0.9]].forEach(([tx,tz])=>{
-        const tire = new THREE.Mesh(new THREE.TorusGeometry(0.55,0.24,8,16), getMat(0x111111,0.9));
+        const tire=new THREE.Mesh(new THREE.TorusGeometry(0.55,0.24,8,16),getMat(0x111111,0.9));
         tire.rotation.x=Math.PI/2; tire.position.set(tx,0.55,tz); g.add(tire);
     });
     return g;
 }
 
 function buildTargetMesh(def) {
-    switch(def.type) {
+    switch(def.type){
         case 'human':    return createHuman(def);
         case 'cow':      return createCow();
         case 'horse':    return createHorse();
@@ -1062,7 +1341,7 @@ function buildTargetMesh(def) {
         case 'raccoon':  return createRaccoon();
         case 'turkey':   return createTurkey();
         case 'alligator':return createAlligator();
-        case 'car':      return createCar(0xcc1111);
+        case 'car':      return createCar([0xee2222,0x22aaee,0x22ee55,0xeeaa22][Math.floor(Math.random()*4)]);
         case 'truck':    return createTruck();
         case 'bus':      return createBus();
         default:         return createHuman(def);
@@ -1071,6 +1350,8 @@ function buildTargetMesh(def) {
 
 function addTarget(wx, wz, defOverride) {
     const biome = getBiome(wx, wz);
+    // No targets on ocean or river
+    if(biome===BIOME.OCEAN || biome===BIOME.RIVER) return;
     const def = defOverride || getRandomDef(biome);
     const mesh = buildTargetMesh(def);
     mesh.position.set(wx, 0.05, wz);
@@ -1088,7 +1369,7 @@ function addTarget(wx, wz, defOverride) {
     });
 }
 
-// 初期ターゲット配置
+// Initial target placement
 for(let i=0;i<80;i++) {
     const r = 30 + Math.random()*200;
     const a = Math.random()*Math.PI*2;
@@ -1098,69 +1379,53 @@ for(let i=0;i<80;i++) {
 // ======================================================
 // CHUNK UPDATE LOOP
 // ======================================================
-const chunkTargetCount = new Map(); // チャンクごとのターゲット数
+const chunkTargetCount = new Map();
 
 function updateChunks() {
     const { cx:ux, cz:uz } = worldToChunk(ufo.position.x, ufo.position.z);
-
     const needed = new Set();
-    for(let dcx=-CHUNK_RENDER_DIST; dcx<=CHUNK_RENDER_DIST; dcx++) {
-        for(let dcz=-CHUNK_RENDER_DIST; dcz<=CHUNK_RENDER_DIST; dcz++) {
+    for(let dcx=-CHUNK_RENDER_DIST; dcx<=CHUNK_RENDER_DIST; dcx++)
+        for(let dcz=-CHUNK_RENDER_DIST; dcz<=CHUNK_RENDER_DIST; dcz++)
             needed.add(getChunkKey(ux+dcx, uz+dcz));
-        }
-    }
 
-    // 新チャンク生成
     needed.forEach(key => {
         if(!activeChunks.has(key)) {
             const [cx,cz] = key.split(',').map(Number);
             buildChunk(cx, cz);
             activeChunks.add(key);
-
-            // チャンク内にターゲットをスポーン
-            const ck = key;
-            if(!chunkTargetCount.has(ck)) {
-                chunkTargetCount.set(ck, 0);
+            if(!chunkTargetCount.has(key)) {
+                chunkTargetCount.set(key, 0);
                 const biome = getBiome(cx*CHUNK_SIZE+CHUNK_SIZE/2, cz*CHUNK_SIZE+CHUNK_SIZE/2);
-                const spawnN = biome===BIOME.OCEAN||biome===BIOME.RIVER ? 0 : 4+Math.floor(Math.random()*4);
+                // No spawns on ocean/river
+                if(biome===BIOME.OCEAN||biome===BIOME.RIVER) return;
+                const spawnN = 4+Math.floor(Math.random()*4);
                 for(let i=0;i<spawnN;i++) {
-                    const wx = cx*CHUNK_SIZE + Math.random()*CHUNK_SIZE;
-                    const wz = cz*CHUNK_SIZE + Math.random()*CHUNK_SIZE;
+                    const wx=cx*CHUNK_SIZE+Math.random()*CHUNK_SIZE;
+                    const wz=cz*CHUNK_SIZE+Math.random()*CHUNK_SIZE;
                     addTarget(wx, wz);
                 }
             }
         }
     });
 
-    // 遠いチャンクを削除
-    const toRemove = [];
-    activeChunks.forEach(key => {
-        if(!needed.has(key)) toRemove.push(key);
-    });
-    toRemove.forEach(key => {
-        const chunk = chunkCache.get(key);
-        if(chunk) {
-            scene.remove(chunk);
-            // ジオメトリは共有なので破棄しない（マテリアルもキャッシュ済み）
-        }
+    const toRemove=[];
+    activeChunks.forEach(key=>{ if(!needed.has(key)) toRemove.push(key); });
+    toRemove.forEach(key=>{
+        const chunk=chunkCache.get(key);
+        if(chunk) scene.remove(chunk);
         activeChunks.delete(key);
-        // 遠いチャンクのターゲット削除
-        const [cx,cz] = key.split(',').map(Number);
-        for(let i=targets.length-1; i>=0; i--) {
-            const t = targets[i];
-            const tc = worldToChunk(t.mesh.position.x, t.mesh.position.z);
-            const tkey = getChunkKey(tc.cx, tc.cz);
-            if(tkey===key) {
-                scene.remove(t.mesh);
-                targets.splice(i,1);
-            }
+        const [cx,cz]=key.split(',').map(Number);
+        for(let i=targets.length-1;i>=0;i--){
+            const t=targets[i];
+            const tc=worldToChunk(t.mesh.position.x,t.mesh.position.z);
+            const tkey=getChunkKey(tc.cx,tc.cz);
+            if(tkey===key){scene.remove(t.mesh);targets.splice(i,1);}
         }
     });
 
-    // 表示中のチャンクをシーンに追加
-    needed.forEach(key => {
-        const chunk = chunkCache.get(key);
-        if(chunk && !scene.children.includes(chunk)) scene.add(chunk);
+    needed.forEach(key=>{
+        const chunk=chunkCache.get(key);
+        if(chunk&&!scene.children.includes(chunk)) scene.add(chunk);
     });
 }
 
@@ -1173,32 +1438,33 @@ function showNotif(text) {
     notifEl.textContent = text;
     notifEl.style.opacity = '1';
     clearTimeout(notifTimeout);
-    notifTimeout = setTimeout(()=>{ notifEl.style.opacity='0'; }, 800);
+    notifTimeout = setTimeout(()=>{ notifEl.style.opacity='0'; }, 1200);
 }
 
 const biomeLabel = document.getElementById('biome-label');
 let lastBiomeLabel = '';
+const hpFill = document.getElementById('hp-fill');
 
 // ======================================================
 // TOUCH / INPUT
 // ======================================================
-document.addEventListener('contextmenu', e=>e.preventDefault());
-document.addEventListener('copy', e=>e.preventDefault());
-document.addEventListener('selectstart', e=>e.preventDefault());
+document.addEventListener('contextmenu',e=>e.preventDefault());
+document.addEventListener('copy',e=>e.preventDefault());
+document.addEventListener('selectstart',e=>e.preventDefault());
 const isTouchDevice = ('ontouchstart' in window)||(navigator.maxTouchPoints>0);
 const stickContainer = document.getElementById('virtual-stick-container');
 const stickBase = document.getElementById('stick-base');
 const stickKnob = document.getElementById('stick-knob');
 const hintEl = document.getElementById('controls-hint');
-if(isTouchDevice) { stickContainer.style.display='block'; hintEl.style.display='none'; }
+if(isTouchDevice){ stickContainer.style.display='block'; hintEl.style.display='none'; }
 const vStick = {x:0,y:0,active:false,id:null};
 const baseR = 55;
-function getStickPos(t) {
-    const rect = stickBase.getBoundingClientRect();
+function getStickPos(t){
+    const rect=stickBase.getBoundingClientRect();
     let dx=t.clientX-(rect.left+rect.width/2), dy=t.clientY-(rect.top+rect.height/2);
     const dist=Math.sqrt(dx*dx+dy*dy);
     if(dist>baseR){dx=dx/dist*baseR;dy=dy/dist*baseR;}
-    return {dx,dy};
+    return{dx,dy};
 }
 stickBase.addEventListener('touchstart',e=>{e.preventDefault();const t=e.changedTouches[0];vStick.id=t.identifier;vStick.active=true;const{dx,dy}=getStickPos(t);vStick.x=dx/baseR;vStick.y=dy/baseR;stickKnob.style.transform=`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`;},{passive:false});
 stickBase.addEventListener('touchmove',e=>{e.preventDefault();for(const t of e.changedTouches){if(t.identifier===vStick.id){const{dx,dy}=getStickPos(t);vStick.x=dx/baseR;vStick.y=dy/baseR;stickKnob.style.transform=`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`;}}},{passive:false});
@@ -1206,12 +1472,17 @@ const resetStick=()=>{vStick.x=0;vStick.y=0;vStick.active=false;vStick.id=null;s
 stickBase.addEventListener('touchend',e=>{e.preventDefault();resetStick();},{passive:false});
 stickBase.addEventListener('touchcancel',e=>{e.preventDefault();resetStick();},{passive:false});
 window.addEventListener('keydown',e=>keys[e.code]=true);
-window.addEventListener('keyup',e=>keys[e.code]=false);
+window.addEventListener('keyup',e=>{ keys[e.code]=false; if(e.code==='Space') keys['_spaceUsed']=false; });
 const abductBtn = document.getElementById('abduct-btn');
 abductBtn.addEventListener('pointerdown',()=>isAbducting=true);
 abductBtn.addEventListener('pointerup',()=>isAbducting=false);
 abductBtn.addEventListener('touchstart',e=>{e.preventDefault();isAbducting=true;},{passive:false});
 abductBtn.addEventListener('touchend',e=>{e.preventDefault();isAbducting=false;},{passive:false});
+
+// Attack button
+const attackBtn = document.getElementById('attack-btn');
+attackBtn.addEventListener('pointerdown',()=>{ fireAttackBeam(); });
+attackBtn.addEventListener('touchstart',e=>{e.preventDefault();fireAttackBeam();},{passive:false});
 
 // ======================================================
 // ANIMATE
@@ -1225,92 +1496,163 @@ function animate() {
     const time = clock.getElapsedTime();
     const delta = 0.016;
 
-    // UFO操作
+    // UFO movement
     const ufoSpeed = 1.1;
-    if(keys['KeyW']||keys['ArrowUp'])    ufo.position.z -= ufoSpeed;
-    if(keys['KeyS']||keys['ArrowDown'])  ufo.position.z += ufoSpeed;
-    if(keys['KeyA']||keys['ArrowLeft'])  ufo.position.x -= ufoSpeed;
-    if(keys['KeyD']||keys['ArrowRight']) ufo.position.x += ufoSpeed;
-    if(vStick.active) { ufo.position.x+=vStick.x*ufoSpeed; ufo.position.z+=vStick.y*ufoSpeed; }
+    if(keys['KeyW']||keys['ArrowUp'])   ufo.position.z -= ufoSpeed;
+    if(keys['KeyS']||keys['ArrowDown']) ufo.position.z += ufoSpeed;
+    if(keys['KeyA']||keys['ArrowLeft']) ufo.position.x -= ufoSpeed;
+    if(keys['KeyD']||keys['ArrowRight'])ufo.position.x += ufoSpeed;
+    if(vStick.active){ ufo.position.x+=vStick.x*ufoSpeed; ufo.position.z+=vStick.y*ufoSpeed; }
 
     ufo.position.y = 55 + Math.sin(time*0.8)*1.2;
     ufo.rotation.y = time*0.3;
-    // アンテナ点滅
     antennaTop.material.color.setHSL(0,1,0.5+0.5*Math.sin(time*5));
 
-    // スポットライト — UFO真下を照らす
     spotLight.position.copy(ufo.position);
     lightTarget.position.set(ufo.position.x, 0, ufo.position.z);
-
-    // UFO周囲ポイントライト更新
     ufoPointLight.position.copy(ufo.position);
-    ufoGroundLight.position.set(ufo.position.x, ufo.position.y, ufo.position.z); // UFOと同じ高さ
+    ufoGroundLight.position.copy(ufo.position);
 
-    // カラーアクセントライトを左右に揺らす
-    const cAngle = time * 0.8;
-    ufoColorLight1.position.set(ufo.position.x + Math.cos(cAngle)*6, ufo.position.y - 1, ufo.position.z + Math.sin(cAngle)*6);
-    ufoColorLight2.position.set(ufo.position.x - Math.cos(cAngle)*6, ufo.position.y - 1, ufo.position.z - Math.sin(cAngle)*6);
+    const cAngle = time*0.8;
+    ufoColorLight1.position.set(ufo.position.x+Math.cos(cAngle)*6, ufo.position.y-1, ufo.position.z+Math.sin(cAngle)*6);
+    ufoColorLight2.position.set(ufo.position.x-Math.cos(cAngle)*6, ufo.position.y-1, ufo.position.z-Math.sin(cAngle)*6);
 
-    // ビームグループ位置
-    beamGroup.position.set(ufo.position.x, ufo.position.y - 27.5, ufo.position.z);
+    beamGroup.position.set(ufo.position.x, ufo.position.y-27.5, ufo.position.z);
 
-    const active = isAbducting||keys['Space'];
+    // Abduct (ABDUCT button only, NOT Space)
+    const abductActive = isAbducting;
 
-    // LEDリング — 24個、カラーサイクル
+    // Space = attack beam
+    if(keys['Space'] && !keys['_spaceUsed']) {
+        keys['_spaceUsed'] = true;
+        fireAttackBeam();
+    }
+
+    // LED ring
     ledRing.children.forEach((led,i)=>{
-        const hue = ((i/24)+time*0.4)%1;
-        led.material.color.setHSL(hue,1.0,active?0.92:0.65);
+        const hue=((i/24)+time*0.4)%1;
+        led.material.color.setHSL(hue,1.0,abductActive?0.92:0.65);
     });
 
-    // リングのemissive pulse
     ufoRing.material.emissiveIntensity = 1.2 + Math.sin(time*3)*0.5;
     ufoRing.material.emissive.setHSL((time*0.15)%1, 1.0, 0.5);
-
-    // ドームのグロー脈動
     domeMat.emissiveIntensity = 0.8 + Math.sin(time*2)*0.4;
+    glowDisc.material.opacity = 0.08 + Math.sin(time*2)*0.04;
 
-    // グロー板の脈動
-    glowDisc.material.opacity = 0.12 + Math.sin(time*2)*0.06;
-
-    // ビーム表示切替 & 光強度
-    beamGroup.visible = active;
-    if(active){
-        spotLight.intensity = 6.0; spotLight.color.setHex(0x88ffee);
+    // Beam — reduced lighting when active
+    beamGroup.visible = abductActive;
+    if(abductActive){
+        spotLight.intensity = 2.0;
+        spotLight.color.setHex(0x44ff88);
         spotLight.angle = Math.PI/7;
-        ufoPointLight.color.setHex(0x00ffee); ufoPointLight.intensity = 8; ufoPointLight.distance = 100;
-        ufoGroundLight.intensity = 5; ufoGroundLight.distance = 180;
-        ufoColorLight1.intensity = 3.5; ufoColorLight2.intensity = 3.5;
+        ufoPointLight.color.setHex(0x00ff44); ufoPointLight.intensity = 3; ufoPointLight.distance = 80;
+        ufoGroundLight.intensity = 1.0; ufoGroundLight.distance = 120;
+        ufoColorLight1.intensity = 1.0; ufoColorLight2.intensity = 1.0;
         const flicker = 1.0 + Math.sin(time*30)*0.12 + Math.sin(time*47)*0.08;
-        beamOuter.material.opacity = 0.055 * flicker;
-        beamMid.material.opacity  = 0.10 * flicker;
-        beamInner.material.opacity = 0.22 * flicker;
-        beamCore.material.opacity  = 0.30 * flicker;
-        beamGlow.material.opacity  = 0.30 + Math.sin(time*8)*0.10;
-        beamLight1.intensity = 4 + Math.sin(time*6)*1;
-        beamLight2.intensity = 3.5 + Math.sin(time*7)*1;
-        beamLight3.intensity = 6 + Math.sin(time*5)*2;
-        bodyMat.emissiveIntensity = 1.2 + Math.sin(time*4)*0.4;
-        bodyMat.emissive.setHex(0x003344);
+        beamOuter.material.opacity = 0.045 * flicker;
+        beamMid.material.opacity   = 0.09  * flicker;
+        beamInner.material.opacity = 0.20  * flicker;
+        beamCore.material.opacity  = 0.32  * flicker;
+        beamGlow.material.opacity  = 0.18 + Math.sin(time*8)*0.08;
+        beamLight1.intensity = 1.5 + Math.sin(time*6)*0.5;
+        beamLight2.intensity = 1.2 + Math.sin(time*7)*0.4;
+        beamLight3.intensity = 2.0 + Math.sin(time*5)*0.8;
+        bodyMat.emissiveIntensity = 0.8 + Math.sin(time*4)*0.3;
+        bodyMat.emissive.setHex(0x003322);
     } else {
-        spotLight.intensity = 1.8; spotLight.color.setHex(0x55ccff);
+        spotLight.intensity = 1.5; spotLight.color.setHex(0x55ccff);
         spotLight.angle = Math.PI/5;
-        ufoPointLight.color.setHex(0x00cc88); ufoPointLight.intensity = 3; ufoPointLight.distance = 80;
-        ufoGroundLight.intensity = 1.5; ufoGroundLight.distance = 130;
-        ufoColorLight1.intensity = 1.2; ufoColorLight2.intensity = 1.2;
+        ufoPointLight.color.setHex(0x00cc88); ufoPointLight.intensity = 2; ufoPointLight.distance = 70;
+        ufoGroundLight.intensity = 1.0; ufoGroundLight.distance = 110;
+        ufoColorLight1.intensity = 0.8; ufoColorLight2.intensity = 0.8;
         bodyMat.emissiveIntensity = 0.4 + Math.sin(time*1.5)*0.15;
         bodyMat.emissive.setHex(0x112233);
         beamLight1.intensity = 0; beamLight2.intensity = 0; beamLight3.intensity = 0;
     }
 
-    // ターゲット行動
-    for(let i=targets.length-1;i>=0;i--) {
-        const t = targets[i];
-        const dx = t.mesh.position.x-ufo.position.x;
-        const dz = t.mesh.position.z-ufo.position.z;
-        const dist = Math.sqrt(dx*dx+dz*dz);
+    // Attack beam timer
+    attackCooldown -= delta;
+    if(attackBeamTimer > 0){
+        attackBeamTimer -= delta;
+        if(attackBeamTimer <= 0) attackBeamGroup.visible = false;
+    }
 
-        if(t.mesh.position.y<=0.1) {
-            if(dist<t.fleeDist&&active) {
+    // ---- Apache update ----
+    apacheSpawnTimer += delta;
+    if(apacheSpawnTimer >= APACHE_SPAWN_INTERVAL) {
+        apacheSpawnTimer = 0;
+        spawnApache();
+    }
+
+    const warningEl = document.getElementById('apache-warning');
+    if(apacheWarningTimer > 0){
+        apacheWarningTimer -= delta;
+        warningEl.style.opacity = Math.min(1, apacheWarningTimer).toString();
+        if(apacheWarningTimer <= 0) warningEl.style.opacity = '0';
+    }
+
+    for(let i=apaches.length-1;i>=0;i--){
+        const ap = apaches[i];
+        // Spin rotors
+        ap.mainRotor.rotation.y += 0.35;
+        ap.tailRotor.rotation.x += 0.4;
+
+        // Move toward UFO
+        const dx = ufo.position.x - ap.mesh.position.x;
+        const dy = ufo.position.y - ap.mesh.position.y;
+        const dz = ufo.position.z - ap.mesh.position.z;
+        const dist = Math.sqrt(dx*dx+dy*dy+dz*dz);
+
+        if(dist > 35) {
+            ap.mesh.position.x += dx/dist * 0.55;
+            ap.mesh.position.y += dy/dist * 0.2;
+            ap.mesh.position.z += dz/dist * 0.55;
+        }
+
+        // Face UFO
+        ap.mesh.lookAt(ufo.position);
+
+        // Apache shooting
+        ap.shootTimer -= delta;
+        if(ap.shootTimer <= 0){
+            ap.shootTimer = 3 + Math.random()*2;
+            ufoHP = Math.max(0, ufoHP - 10);
+            hpFill.style.width = ufoHP + '%';
+            // Flash red on hit
+            const origColor = bodyMat.emissive.getHex();
+            bodyMat.emissive.setHex(0xff0000);
+            setTimeout(()=>bodyMat.emissive.setHex(origColor), 150);
+        }
+
+        // Flash when hit by player
+        if(ap.flashTimer > 0){
+            ap.flashTimer -= delta;
+            ap.mesh.traverse(child=>{
+                if(child.isMesh && child.material) child.material.emissive = new THREE.Color(0xff2200);
+            });
+        } else {
+            ap.mesh.traverse(child=>{
+                if(child.isMesh && child.material) child.material.emissive = new THREE.Color(0x000000);
+            });
+        }
+
+        // HP check
+        if(ap.hp <= 0){
+            createExplosion(ap.mesh.position.clone());
+            scene.remove(ap.mesh);
+            apaches.splice(i,1);
+        }
+    }
+
+    // ---- Target behavior ----
+    for(let i=targets.length-1;i>=0;i--){
+        const t=targets[i];
+        const dx=t.mesh.position.x-ufo.position.x;
+        const dz=t.mesh.position.z-ufo.position.z;
+        const dist=Math.sqrt(dx*dx+dz*dz);
+
+        if(t.mesh.position.y<=0.1){
+            if(dist<t.fleeDist&&abductActive){
                 const angle=Math.atan2(dx,dz);
                 t.mesh.position.x+=Math.sin(angle)*t.speed*1.5;
                 t.mesh.position.z+=Math.cos(angle)*t.speed*1.5;
@@ -1322,45 +1664,42 @@ function animate() {
                 t.mesh.position.z+=Math.cos(t.wanderDir)*t.speed*0.25;
                 if(t.type==='human'||t.type==='deer'||t.type==='wolf'||t.type==='horse')
                     t.mesh.rotation.y=t.wanderDir;
-                // 脚アニメ（人間系）
-                if(t.type==='human') {
+                if(t.type==='human'){
                     t.mesh.children.forEach((c,ci)=>{ if(ci<2) c.rotation.x=Math.sin(time*4+t.animPhase+ci)*0.2; });
                 }
             }
         }
 
-        // 吸い込み
-        if(active&&dist<6) {
+        if(abductActive&&dist<6){
             t.vy+=3.5/t.weight;
             if(t.vy>0.6) t.vy=0.6;
             t.mesh.position.y+=t.vy;
             t.mesh.rotation.y+=0.06; t.mesh.rotation.x+=0.02;
-            if(t.mesh.position.y>ufo.position.y-2) {
+            if(t.mesh.position.y>ufo.position.y-2){
                 score+=t.score; abductCount++;
                 document.getElementById('score').textContent=score;
                 document.getElementById('count').textContent=abductCount;
                 showNotif('+'+t.score);
                 collected.push({title:t.title,icon:t.icon,score:t.score});
-                scene.remove(t.mesh);
-                targets.splice(i,1);
+                scene.remove(t.mesh); targets.splice(i,1);
             }
-        } else if(t.mesh.position.y>0.05) {
+        } else if(t.mesh.position.y>0.05){
             t.vy-=0.2;
             t.mesh.position.y+=t.vy;
             if(t.mesh.position.y<=0.05){t.mesh.position.y=0.05;t.vy=0;t.mesh.rotation.x=0;}
         }
     }
 
-    // チャンク更新（毎30フレームごと）
+    // Chunk update
     chunkUpdateTimer++;
-    if(chunkUpdateTimer>=30) { chunkUpdateTimer=0; updateChunks(); }
+    if(chunkUpdateTimer>=30){ chunkUpdateTimer=0; updateChunks(); }
 
-    // バイオームラベル更新
-    const curBiome = getBiome(ufo.position.x, ufo.position.z);
-    const bn = BIOME_NAMES[curBiome]||'WILDERNESS';
-    if(bn!==lastBiomeLabel) { biomeLabel.textContent=bn; lastBiomeLabel=bn; }
+    // Biome label
+    const curBiome=getBiome(ufo.position.x,ufo.position.z);
+    const bn=BIOME_NAMES[curBiome]||'WILDERNESS';
+    if(bn!==lastBiomeLabel){ biomeLabel.textContent=bn; lastBiomeLabel=bn; }
 
-    // カメラ追従
+    // Camera follow
     camTarget.set(ufo.position.x, ufo.position.y+35, ufo.position.z+55);
     camLookTarget.set(ufo.position.x, ufo.position.y-25, ufo.position.z);
     camera.position.lerp(camTarget,0.08);
@@ -1380,7 +1719,7 @@ document.getElementById('encyclopedia-btn').onclick = () => {
     modal.style.display='block';
     const grid = document.getElementById('card-grid');
     grid.innerHTML='';
-    if(collected.length===0) {
+    if(collected.length===0){
         grid.innerHTML='<div style="color:#00ff8866;padding:40px;letter-spacing:2px">// まだ誰も拉致されていない //</div>';
         return;
     }
@@ -1400,7 +1739,6 @@ window.addEventListener('resize',()=>{
     renderer.setSize(window.innerWidth,window.innerHeight);
 });
 
-// 初期チャンク生成
 updateChunks();
 animate();
 
