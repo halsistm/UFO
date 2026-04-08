@@ -1203,22 +1203,9 @@ attackBtn.addEventListener('pointerdown',()=>{fireAttackBeam();});
 attackBtn.addEventListener('touchstart',e=>{e.preventDefault();fireAttackBeam();},{passive:false});
 
 // ======================================================
-// SPEED TRAIL SYSTEM
-// ======================================================
-const TRAIL_COUNT=30;
-const trailPool=[];
-for(let i=0;i<TRAIL_COUNT;i++){
-    const m=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.15,1),new THREE.MeshBasicMaterial({color:0x00ffee,transparent:true,opacity:0,depthWrite:false}));
-    m.visible=false;scene.add(m);trailPool.push({mesh:m,age:0,maxAge:0,streakLen:1});
-}
-let trailHead=0,trailEmitTimer=0;
-const prevUfoPos=new THREE.Vector3(),ufoMoveDir=new THREE.Vector3(0,0,-1);
-const _streakQuat=new THREE.Quaternion(),_zAxis=new THREE.Vector3(0,0,1);
-
-// ======================================================
 // ⚡ LED光跡システム — 流れるテープランプ（6本・半透明リボン）
 // ======================================================
-const LED_TRAIL_COUNT = 6;           // 6本に変更（24個中4つおきに選択）
+const LED_TRAIL_COUNT = 6;
 const LED_TRAIL_POOL_SIZE = LED_TRAIL_COUNT * 22;
 const _ledTrailPool = [];
 const _ledTrailActive = [];
@@ -1248,6 +1235,8 @@ for(let i=0;i<LED_TRAIL_POOL_SIZE;i++){
 const camTarget=new THREE.Vector3(0,40,55);
 const camLookTarget=new THREE.Vector3(0,30,0);
 let chunkUpdateTimer=0,camShakeTimer=0,moveStreak=0,currentSpeed=2.8;
+const prevUfoPos=new THREE.Vector3(),ufoMoveDir=new THREE.Vector3(0,0,-1);
+const _streakQuat=new THREE.Quaternion(),_zAxis=new THREE.Vector3(0,0,1);
 
 function animate(){
     requestAnimationFrame(animate);
@@ -1273,38 +1262,12 @@ function animate(){
     if(isMoving){const mv=new THREE.Vector3().subVectors(ufo.position,prevUfoPos);mv.y=0;if(mv.length()>0.01)ufoMoveDir.copy(mv).normalize();}
     prevUfoPos.copy(ufo.position);
 
-    // --- 既存スピードトレイル ---
-    const trailIntensity=boostFactor;
-    if(trailIntensity>0.05&&isMoving){
-        trailEmitTimer-=delta;
-        const emitInterval=Math.max(0.008,0.05-trailIntensity*0.04);
-        if(trailEmitTimer<=0){
-            trailEmitTimer=emitInterval;
-            const t=trailPool[trailHead%TRAIL_COUNT];trailHead++;
-            t.mesh.position.copy(ufo.position);t.mesh.position.y-=1+Math.random()*3;
-            t.mesh.position.x+=(Math.random()-0.5)*3;t.mesh.position.z+=(Math.random()-0.5)*3;
-            const hue=0.45-trailIntensity*0.35;t.mesh.material.color.setHSL(hue,1.0,0.85);
-            t.age=1.0;t.maxAge=0.15+trailIntensity*0.25;t.streakLen=4+trailIntensity*30;
-            _streakQuat.setFromUnitVectors(_zAxis,ufoMoveDir);
-            t.mesh.quaternion.copy(_streakQuat);t.mesh.scale.set(1.2,1.2,t.streakLen);t.mesh.visible=true;
-        }
-    }
-    trailPool.forEach(t=>{
-        if(t.age>0){
-            t.age-=delta/t.maxAge;
-            if(t.age<=0){t.age=0;t.mesh.visible=false;t.mesh.material.opacity=0;}
-            else{t.mesh.material.opacity=t.age*0.9;const w=0.8+t.age*0.4;t.mesh.scale.set(w,w,t.streakLen*Math.max(0.05,t.age));}
-        }
-    });
-
     // ======================================================
     // ⚡ LED光跡 — 流れるテープランプ
-    // 6本のLEDからリボン状の半透明ストリークを引く
-    // 横幅広・縦薄・AdditiveBlending で柔らかく重なる
     // ======================================================
     if(boostFactor>0.05&&isMoving){
         for(let li=0;li<LED_TRAIL_COUNT;li++){
-            const ledIdx=li*4; // 0,4,8,12,16,20 — 6本を等間隔で選択
+            const ledIdx=li*4;
             const led=ledRing.children[ledIdx];
             led.getWorldPosition(_ledWorldPos);
 
@@ -1316,17 +1279,14 @@ function animate(){
 
             const hue=((ledIdx/24)+time*0.4)%1;
 
-            // テープランプ：横広・縦薄のリボン形状
             const streakLen = 6 + boostFactor * 90;
-            const tapeWidth  = 1 + boostFactor * 2.0;  // テープ横幅
-            const tapeHeight = 0.1;                       // テープ薄さ
-            const initOpacity = Math.min(boostFactor * 0.4, 0.38); // 半透明
+            const tapeWidth  = 1 + boostFactor * 2.0;
+            const tapeHeight = 0.1;
+            const initOpacity = Math.min(boostFactor * 0.4, 0.38);
 
-            // 移動方向後方に中心をずらす
             p.position.copy(_ledWorldPos);
             p.position.addScaledVector(ufoMoveDir, -streakLen * 0.5);
 
-            // BoxのZ軸を移動方向に向ける
             _streakQuat.setFromUnitVectors(_zAxis, ufoMoveDir);
             p.quaternion.copy(_streakQuat);
             p.scale.set(tapeWidth, tapeHeight, streakLen);
@@ -1340,7 +1300,6 @@ function animate(){
         }
     }
 
-    // LED テープ光跡の更新（後端が縮退しながらフェード）
     for(let i=_ledTrailActive.length-1;i>=0;i--){
         const t=_ledTrailActive[i];
         t.age+=delta;
@@ -1352,7 +1311,7 @@ function animate(){
         }
         const prog=t.age/t.maxAge;
         const lenNow=t.streakLen*(1-prog*0.5);
-        const tapeW=t.thickness*(1-prog*0.3); // 横幅はゆっくり縮む
+        const tapeW=t.thickness*(1-prog*0.3);
         t.m.scale.set(tapeW, 0.22, lenNow);
         t.m.material.opacity=t.initOpacity*(1-prog*prog);
     }
