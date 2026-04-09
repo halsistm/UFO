@@ -697,24 +697,38 @@ function placeDecoration(group,biome,lx,lz,rng,deciduousBatch,pineBatch,bushBatc
         if(rng()<0.6){deciduousBatch.push({x:lx,z:lz,scale:0.5+rng()*0.4,rotY:rng()*Math.PI*2});}
         else{const s=0.4+rng()*0.5;const col=[0x0e3a08,0x123d0c,0x0a2e06][Math.floor(rng()*3)];bushBatch.push({x:lx,z:lz,scale:s,col});}
     }else if(biome===BIOME.FARMLAND){
-        const t=Math.floor(rng()*3);
+        const t=Math.floor(rng()*4);
         if(t===0){const f=makeFarmField();f.position.set(lx,0.1,lz);group.add(f);}
         else if(t===1){const b=makeBarn();b.position.set(lx,0,lz);group.add(b);}
-        else{const s=makeSilo();s.position.set(lx,0,lz);group.add(s);}
+        else if(t===2){const s=makeSilo();s.position.set(lx,0,lz);group.add(s);}
+        else{const wt=makeWaterTower();wt.position.set(lx,0,lz);group.add(wt);}
     }else if(biome===BIOME.SUBURB){
-        const house=makeHouse(rng);
-        house.position.set(lx,0,lz);house.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(house);
-        deciduousBatch.push({x:lx+4,z:lz+4,scale:0.6,rotY:rng()*Math.PI*2});
+        const t=rng();
+        if(t<0.40){
+            const house=makeHouse(rng);house.position.set(lx,0,lz);house.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(house);
+            deciduousBatch.push({x:lx+4,z:lz+4,scale:0.6,rotY:rng()*Math.PI*2});
+        }else if(t<0.60){
+            const ap=makeMidRise(rng);ap.position.set(lx,0,lz);ap.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(ap);
+        }else if(t<0.75){
+            const ch=makeChurch(rng);ch.position.set(lx,0,lz);ch.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(ch);
+        }else if(t<0.88){
+            const gs=makeGasStation();gs.position.set(lx,0,lz);gs.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(gs);
+        }else{
+            const wt=makeWaterTower();wt.position.set(lx,0,lz);group.add(wt);
+        }
     }else if(biome===BIOME.URBAN){
         const h=20+rng()*60,w=8+rng()*14,d=8+rng()*14;
         const colors=[0x1e2535,0x252535,0x181828,0x222230,0x1a2220];
         const bldg=makeBuilding(w,d,h,colors[Math.floor(rng()*colors.length)]);
         bldg.position.set(lx,0,lz);group.add(bldg);
     }else if(biome===BIOME.INDUSTRIAL){
-        const t=Math.floor(rng()*3);
+        const t=Math.floor(rng()*6);
         if(t===0){const f=makeFactory();f.position.set(lx,0,lz);group.add(f);}
         else if(t===1){const wh=makeWarehouse();wh.position.set(lx,0,lz);group.add(wh);}
-        else{const ch=makeChimney();ch.position.set(lx,0,lz);group.add(ch);}
+        else if(t===2){const ch=makeChimney();ch.position.set(lx,0,lz);group.add(ch);}
+        else if(t===3){const wt=makeWaterTower();wt.position.set(lx,0,lz);group.add(wt);}
+        else if(t===4){const pp=makePowerPylon();pp.position.set(lx,0,lz);pp.rotation.y=rng()*Math.PI;group.add(pp);}
+        else{const ot=makeOilTank(rng);ot.position.set(lx,0,lz);group.add(ot);}
     }else if(biome===BIOME.BEACH){
         const palm=makePalmTree();palm.position.set(lx,0,lz);group.add(palm);
     }
@@ -797,6 +811,7 @@ function makeHouse(rng){
         const win=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.9),new THREE.MeshBasicMaterial({color:0x88ccff}));
         win.position.set(dx,dy,3.01);g.add(win);
     });
+    g.userData.isBuilding=true;g.userData.bw=7;g.userData.bd=6;g.userData.bh=6;
     return g;
 }
 
@@ -806,6 +821,7 @@ function makeBarn(){
     body.position.y=2.5;g.add(body);
     const roof=new THREE.Mesh(new THREE.CylinderGeometry(0.1,5.8,3,4),getMat(0x662222,0.9));
     roof.position.y=6.5;roof.rotation.y=Math.PI/4;g.add(roof);
+    g.userData.isBuilding=true;g.userData.bw=10;g.userData.bd=7;g.userData.bh=8;
     return g;
 }
 function makeSilo(){
@@ -814,6 +830,7 @@ function makeSilo(){
     body.position.y=4;g.add(body);
     const top=new THREE.Mesh(new THREE.ConeGeometry(2,2,12),getMat(0x888880,0.9));
     top.position.y=9;g.add(top);
+    g.userData.isBuilding=true;g.userData.bw=4;g.userData.bd=4;g.userData.bh=11;
     return g;
 }
 function makeFarmField(){
@@ -833,6 +850,7 @@ function makeFactory(){
         const ch=new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.8,8,10),getMat(0x252215,0.9));
         ch.position.set(ox,10,-3);g.add(ch);
     });
+    g.userData.isBuilding=true;g.userData.bw=14;g.userData.bd=10;g.userData.bh=14;
     return g;
 }
 function makeWarehouse(){
@@ -841,6 +859,7 @@ function makeWarehouse(){
     body.position.y=2.5;g.add(body);
     const roof=new THREE.Mesh(new THREE.CylinderGeometry(0.1,9.5,2,4),getMat(0x454540,0.9));
     roof.position.y=6;roof.rotation.y=Math.PI/4;g.add(roof);
+    g.userData.isBuilding=true;g.userData.bw=18;g.userData.bd=10;g.userData.bh=7;
     return g;
 }
 function makeChimney(){
@@ -849,6 +868,82 @@ function makeChimney(){
     base.position.y=7.5;g.add(base);
     const top=new THREE.Mesh(new THREE.CylinderGeometry(1.8,1.5,1.5,12),getMat(0x222015,0.9));
     top.position.y=15.75;g.add(top);
+    g.userData.isBuilding=true;g.userData.bw=4;g.userData.bd=4;g.userData.bh=17;
+    return g;
+}
+// ── 教会 ────────────────────────────────────────────────
+function makeChurch(rng){
+    const g=new THREE.Group();
+    const wc=getMat(0xd8d0c0,0.9),rc=getMat(0x8b4422,0.85),sc=getMat(0xc8c0b0,0.9);
+    const nave=new THREE.Mesh(new THREE.BoxGeometry(8,5,14),wc);nave.position.y=2.5;g.add(nave);
+    const transept=new THREE.Mesh(new THREE.BoxGeometry(14,4,6),wc);transept.position.set(0,2,0);g.add(transept);
+    const stBase=new THREE.Mesh(new THREE.BoxGeometry(3.5,7,3.5),sc);stBase.position.set(0,5.5,-4.5);g.add(stBase);
+    const spire=new THREE.Mesh(new THREE.ConeGeometry(2.4,9,4),rc);spire.position.set(0,13.5,-4.5);spire.rotation.y=Math.PI/4;g.add(spire);
+    const cross1=new THREE.Mesh(new THREE.BoxGeometry(0.3,2.5,0.3),getMat(0xdddddd,0.7));cross1.position.set(0,18.5,-4.5);g.add(cross1);
+    const cross2=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.3,0.3),getMat(0xdddddd,0.7));cross2.position.set(0,18,-4.5);g.add(cross2);
+    const roofN=new THREE.Mesh(new THREE.CylinderGeometry(0.1,4.5,2,4),rc);roofN.position.set(0,5.2,0);roofN.rotation.y=Math.PI/4;g.add(roofN);
+    g.userData.isBuilding=true;g.userData.bw=14;g.userData.bd=14;g.userData.bh=19;
+    return g;
+}
+// ── ガソリンスタンド ──────────────────────────────────
+function makeGasStation(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.BoxGeometry(8,4,6),getMat(0xe8e0d0,0.85));body.position.y=2;g.add(body);
+    const canopy=new THREE.Mesh(new THREE.BoxGeometry(18,0.45,11),getMat(0xcc3322,0.8));canopy.position.set(3,5.2,0);g.add(canopy);
+    [0,8].forEach(ox=>{const col=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,5.2,6),getMat(0xaaaaaa,0.8));col.position.set(ox,2.6,0);g.add(col);});
+    [-3.5,3.5].forEach(oz=>{
+        const pump=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.8,0.55),getMat(0x228844,0.8));pump.position.set(6,0.9,oz);g.add(pump);
+        const scr=new THREE.Mesh(new THREE.PlaneGeometry(0.55,0.55),new THREE.MeshBasicMaterial({color:0x00ccff}));scr.position.set(6.46,1.3,oz);g.add(scr);
+    });
+    const sign=new THREE.Mesh(new THREE.BoxGeometry(3,2,0.2),getMat(0xff4400,0.7));sign.position.set(-1,6,0);g.add(sign);
+    g.userData.isBuilding=true;g.userData.bw=18;g.userData.bd=11;g.userData.bh=6;
+    return g;
+}
+// ── 給水塔 ────────────────────────────────────────────
+function makeWaterTower(){
+    const g=new THREE.Group();const lm=getMat(0x555548,0.9);
+    const LG=new THREE.CylinderGeometry(0.18,0.22,10,6);
+    for(let i=0;i<6;i++){const a=(i/6)*Math.PI*2;const leg=new THREE.Mesh(LG,lm);leg.position.set(Math.cos(a)*2.6,5,Math.sin(a)*2.6);g.add(leg);}
+    const brace=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.1,6,12),lm);brace.rotation.x=Math.PI/2;brace.position.y=3;g.add(brace);
+    const tank=new THREE.Mesh(new THREE.CylinderGeometry(2.9,2.9,5,14),getMat(0x7a8a70,0.85));tank.position.y=12;g.add(tank);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(3.3,2.2,14),getMat(0x556655,0.9));roof.position.y=15.6;g.add(roof);
+    const pipe=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,10,6),lm);pipe.position.set(0,5,0);g.add(pipe);
+    g.userData.isBuilding=true;g.userData.bw=6;g.userData.bd=6;g.userData.bh=17;
+    return g;
+}
+// ── 送電鉄塔 ──────────────────────────────────────────
+function makePowerPylon(){
+    const g=new THREE.Group();const m=getMat(0x999988,0.7);
+    const mast=new THREE.Mesh(new THREE.BoxGeometry(0.9,20,0.9),m);mast.position.y=10;g.add(mast);
+    [6,11,16].forEach(y=>{
+        const arm=new THREE.Mesh(new THREE.BoxGeometry(12,0.45,0.45),m);arm.position.y=y;g.add(arm);
+        [-5.5,5.5].forEach(ox=>{const ins=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,1,5),getMat(0x333333,0.6));ins.position.set(ox,y-0.7,0);g.add(ins);});
+    });
+    g.userData.isBuilding=true;g.userData.bw=12;g.userData.bd=2;g.userData.bh=20;
+    return g;
+}
+// ── 中層アパート ──────────────────────────────────────
+function makeMidRise(rng){
+    const g=new THREE.Group();
+    const floors=4+Math.floor(rng()*4),h=floors*3.2;
+    const w=10+rng()*6,d=8+rng()*4;
+    const cols=[0xc8b89a,0xb0a898,0xd0c8b0,0xa8b8c0,0xc0b0a0];
+    const body=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),getMat(cols[Math.floor(rng()*cols.length)],0.9));body.position.y=h/2;g.add(body);
+    const parapet=new THREE.Mesh(new THREE.BoxGeometry(w+0.5,0.55,d+0.5),getMat(0x888888,0.85));parapet.position.y=h+0.27;g.add(parapet);
+    const ac=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.7,0.8),getMat(0x999999,0.8));ac.position.set(w*0.3,h+0.6,d*0.3);g.add(ac);
+    for(let f=1;f<floors;f+=2){const bal=new THREE.Mesh(new THREE.BoxGeometry(w+1.8,0.25,1.2),getMat(0x999999,0.8));bal.position.set(0,f*3.2-0.1,d/2+0.6);g.add(bal);}
+    g.userData.isBuilding=true;g.userData.bw=w;g.userData.bd=d;g.userData.bh=h;
+    return g;
+}
+// ── オイルタンク ──────────────────────────────────────
+function makeOilTank(rng){
+    const g=new THREE.Group();
+    const r=3+rng()*2,h=4+rng()*3;
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,14),getMat(0x554433,0.85));body.position.y=h/2;g.add(body);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(r+0.1,1.5,14),getMat(0x443322,0.9));roof.position.y=h+0.75;g.add(roof);
+    const band=new THREE.Mesh(new THREE.TorusGeometry(r+0.05,0.12,6,14),getMat(0x666655,0.8));band.rotation.x=Math.PI/2;band.position.y=h*0.5;g.add(band);
+    const ladder=new THREE.Mesh(new THREE.BoxGeometry(0.15,h,0.1),getMat(0x888877,0.7));ladder.position.set(r,h/2,0);g.add(ladder);
+    g.userData.isBuilding=true;g.userData.bw=r*2+0.5;g.userData.bd=r*2+0.5;g.userData.bh=h+2;
     return g;
 }
 
@@ -982,7 +1077,7 @@ function fireAttackBeam(){
         }
         if(buildingHit){
             soundManager.playOnce('buildingExplosion', 1.0);
-            score+=500;document.getElementById('score').textContent=score;showNotif('BUILDING DESTROYED! +500');
+            score+=500;document.getElementById('score').textContent=score;showNotif('STRUCTURE DESTROYED! +500');
         }else{
             soundManager.playOnce('groundExplosion', 0.85);
             createExplosion(targetPos.clone(),0.8);
@@ -1529,7 +1624,7 @@ function animate(){
     groundRing.position.x=ufo.position.x;groundRing.position.z=ufo.position.z;
 
     const abductActive=isAbducting;
-    soundManager.update(isMoving, isFastMode, abductActive);
+    soundManager.update(isMoving, boostFactor > 0.12, abductActive);
 
     // アパッチ音量を距離で調整
     apaches.forEach(ap=>{
