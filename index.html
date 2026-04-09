@@ -191,6 +191,7 @@ class SoundManager {
             apacheAttack:      '521377__jarusca__rocket-launch.mp3',
             apacheExplosion:   '490266__anomaex__sci-fi_explosion_2.mp3',
             ufoHit:            '456272__soundfxstudio__distance-explosion-sound.mp3',
+            pop:               'pop.mp3',
         };
 
         await Promise.all(Object.entries(files).map(async ([key, file]) => {
@@ -1652,6 +1653,7 @@ function animate(){
                 score+=t.score;abductCount++;
                 document.getElementById('score').textContent=score;document.getElementById('count').textContent=abductCount;
                 showNotif(t.title+'  +'+t.score);
+                soundManager.playOnce('pop', 1.0);
                 collected.push({title:t.title,icon:t.icon,score:t.score,type:t.type});
                 scene.remove(t.mesh);targets.splice(i,1);
             }
