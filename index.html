@@ -150,6 +150,165 @@
 window.addEventListener('load', () => {
 
 // ======================================================
+// SOUND SYSTEM
+// ======================================================
+class SoundManager {
+    constructor() {
+        this.ctx = null;
+        this.buffers = {};
+        this.droneSource = null;
+        this.hyperdriveSource = null;
+        this.abductSource = null;
+        this.apacheSources = new Map(); // mesh UUID → {src, gain}
+        this.prevIsFastMode = false;
+        this.prevAbductActive = false;
+        this.prevIsMoving = false;
+        this.ready = false;
+    }
+
+    async init() {
+        if (this.ctx) return;
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const files = {
+            drone:             '232169__gladkiy__drone-engine.mp3',
+            hyperdrive:        '273357__profmegavolt__hyperdrive-sound-effect-1.mp3',
+            crash:             'crash impact building.mp3',
+            abduct:            '514556__lilmati__ufo-abducting-01.mp3',
+            attackBeam:        '440779__wcoltd__piplaser.mp3',
+            groundExplosion:   '560580__theplax__explosion-1.mp3',
+            buildingExplosion: '490266__anomaex__sci-fi_explosion_2.mp3',
+            apacheMove:        '554511__robinhood76__09980-fast-helicopter-flight-loop.mp3',
+            apacheAttack:      '521377__jarusca__rocket-launch.mp3',
+            apacheExplosion:   '490266__anomaex__sci-fi_explosion_2.mp3',
+            ufoHit:            '456272__soundfxstudio__distance-explosion-sound.mp3',
+        };
+        await Promise.all(Object.entries(files).map(async ([key, file]) => {
+            try {
+                const res = await fetch(file);
+                if (!res.ok) throw new Error(res.status);
+                const buf = await res.arrayBuffer();
+                this.buffers[key] = await this.ctx.decodeAudioData(buf);
+            } catch(e) { console.warn(`[Sound] Failed: ${file}`, e); }
+        }));
+        this.ready = true;
+    }
+
+    _makeSource(bufKey, loop, loopStart, loopEnd, volume) {
+        if (!this.ready || !this.buffers[bufKey]) return null;
+        const src = this.ctx.createBufferSource();
+        src.buffer = this.buffers[bufKey];
+        src.loop = loop;
+        if (loop && loopEnd > 0) { src.loopStart = loopStart; src.loopEnd = loopEnd; }
+        const gain = this.ctx.createGain();
+        gain.gain.value = volume;
+        src.connect(gain);
+        gain.connect(this.ctx.destination);
+        return { src, gain };
+    }
+
+    playOnce(bufKey, volume = 1, offset = 0) {
+        const s = this._makeSource(bufKey, false, 0, 0, volume);
+        if (!s) return;
+        s.src.start(0, offset);
+    }
+
+    startLoop(bufKey, loopStart, loopEnd, volume = 1, startOffset = -1) {
+        const s = this._makeSource(bufKey, true, loopStart, loopEnd, volume);
+        if (!s) return null;
+        s.src.start(0, startOffset < 0 ? loopStart : startOffset);
+        return s;
+    }
+
+    stopSource(s, fadeTime = 0.12) {
+        if (!s || !this.ctx) return;
+        try {
+            if (fadeTime > 0) {
+                s.gain.gain.setTargetAtTime(0, this.ctx.currentTime, fadeTime / 3);
+                s.src.stop(this.ctx.currentTime + fadeTime);
+            } else {
+                s.src.stop();
+            }
+        } catch(e) {}
+    }
+
+    update(isMoving, isFastMode, abductActive) {
+        if (!this.ready) return;
+
+        // ── 光速モード切替 ──
+        if (isFastMode !== this.prevIsFastMode) {
+            if (isFastMode) {
+                // 通常移動音を止めて光速音を再生（頭から、4.335-9.053をループ）
+                this.stopSource(this.droneSource);
+                this.droneSource = null;
+                this.hyperdriveSource = this.startLoop('hyperdrive', 4.335, 9.053, 0.75, 0);
+            } else {
+                // 光速解除：ループを外して残りを再生
+                if (this.hyperdriveSource) {
+                    try { this.hyperdriveSource.src.loop = false; } catch(e) {}
+                    // loopEnd以降を別ソースで再生
+                    const tail = this._makeSource('hyperdrive', false, 0, 0, 0.75);
+                    if (tail) tail.src.start(0, 9.053);
+                    this.stopSource(this.hyperdriveSource, 0.05);
+                    this.hyperdriveSource = null;
+                }
+                // 移動中ならドローン音を再開
+                if (isMoving) {
+                    this.droneSource = this.startLoop('drone', 10.571, 18.780, 0.65, 10.571);
+                }
+            }
+            this.prevIsFastMode = isFastMode;
+        }
+
+        // ── 通常移動音（非光速時）──
+        if (!isFastMode) {
+            if (isMoving && !this.prevIsMoving && !this.droneSource) {
+                this.droneSource = this.startLoop('drone', 10.571, 18.780, 0.65, 10.571);
+            } else if (!isMoving && this.prevIsMoving) {
+                this.stopSource(this.droneSource);
+                this.droneSource = null;
+            }
+        }
+        this.prevIsMoving = isMoving;
+
+        // ── 吸い込みビーム音 ──
+        if (abductActive !== this.prevAbductActive) {
+            if (abductActive) {
+                this.abductSource = this.startLoop('abduct', 0.981, 2.127, 0.85, 0.981);
+            } else {
+                this.stopSource(this.abductSource);
+                this.abductSource = null;
+            }
+            this.prevAbductActive = abductActive;
+        }
+    }
+
+    // ── アパッチ個別管理 ──
+    startApacheSound(meshUUID) {
+        if (this.apacheSources.has(meshUUID)) return;
+        const s = this.startLoop('apacheMove', 0, 0, 0.5, 0);
+        if (s) this.apacheSources.set(meshUUID, s);
+    }
+
+    stopApacheSound(meshUUID) {
+        const s = this.apacheSources.get(meshUUID);
+        if (s) { this.stopSource(s, 0.35); this.apacheSources.delete(meshUUID); }
+    }
+}
+
+const soundManager = new SoundManager();
+
+// AudioContext はユーザー操作後に初期化
+let _soundInitDone = false;
+function _ensureSound() {
+    if (_soundInitDone) return;
+    _soundInitDone = true;
+    soundManager.init();
+}
+['keydown','pointerdown','touchstart'].forEach(ev =>
+    window.addEventListener(ev, _ensureSound, { once: false, passive: true })
+);
+
+// ======================================================
 // WORLD / CHUNK SYSTEM
 // ======================================================
 const CHUNK_SIZE = 64;
@@ -756,6 +915,7 @@ const _atkDir=new THREE.Vector3(),_atkMid=new THREE.Vector3(),_yAxis=new THREE.V
 function fireAttackBeam(){
     if(attackCooldown>0)return;
     attackCooldown=0.8; attackBeamTimer=0.3;
+    soundManager.playOnce('attackBeam', 0.85);
     let nearest=null,nearestDist=Infinity;
     apaches.forEach(ap=>{
         const d=ufo.position.distanceTo(ap.mesh.position);
@@ -766,6 +926,8 @@ function fireAttackBeam(){
         targetPos=nearest.mesh.position.clone();
         nearest.hp-=1;
         if(nearest.hp<=0){
+            soundManager.stopApacheSound(nearest.mesh.uuid);
+            soundManager.playOnce('apacheExplosion', 1.0);
             createExplosion(nearest.mesh.position.clone(),1.5);
             scene.remove(nearest.mesh);
             apaches.splice(apaches.indexOf(nearest),1);
@@ -792,8 +954,13 @@ function fireAttackBeam(){
                 }
             }
         }
-        if(buildingHit){score+=500;document.getElementById('score').textContent=score;showNotif('BUILDING DESTROYED! +500');}
-        else{createExplosion(targetPos.clone(),0.8);}
+        if(buildingHit){
+            soundManager.playOnce('buildingExplosion', 1.0);
+            score+=500;document.getElementById('score').textContent=score;showNotif('BUILDING DESTROYED! +500');
+        }else{
+            soundManager.playOnce('groundExplosion', 0.85);
+            createExplosion(targetPos.clone(),0.8);
+        }
     }
     _atkDir.subVectors(targetPos,ufo.position);
     const len=_atkDir.length();_atkDir.normalize();
@@ -860,6 +1027,7 @@ function spawnApache(){
     apacheObj.mesh.position.set(ax,ay,az);
     scene.add(apacheObj.mesh);
     apaches.push({mesh:apacheObj.mesh,mainRotor:apacheObj.mainRotor,tailRotor:apacheObj.tailRotor,hp:3,shootTimer:2+Math.random()*2,flashTimer:0});
+    soundManager.startApacheSound(apacheObj.mesh.uuid);
     apacheWarningTimer=3.0;
     document.getElementById('apache-warning').style.opacity='1';
 }
@@ -1279,8 +1447,8 @@ function animate(){
 
             const hue=((ledIdx/24)+time*0.4)%1;
 
-            const streakLen = 6 + boostFactor * 90;
-            const tapeWidth  = 1 + boostFactor * 2.0;
+            const streakLen = 6 + boostFactor * 150;
+            const tapeWidth  = 1 + boostFactor * 1.5;
             const tapeHeight = 0.1;
             const initOpacity = Math.min(boostFactor * 0.4, 0.38);
 
@@ -1335,6 +1503,17 @@ function animate(){
     groundRing.position.x=ufo.position.x;groundRing.position.z=ufo.position.z;
 
     const abductActive=isAbducting;
+    soundManager.update(isMoving, isFastMode, abductActive);
+
+    // アパッチ音量を距離で調整
+    apaches.forEach(ap=>{
+        const s=soundManager.apacheSources.get(ap.mesh.uuid);
+        if(s){
+            const d=ufo.position.distanceTo(ap.mesh.position);
+            s.gain.gain.value=Math.max(0, Math.min(0.6, 1-d/250))*0.6;
+        }
+    });
+
     if(abductActive){
         blobShadowMat.opacity=Math.min(blobShadowMat.opacity+0.06,0.50);
         const pulse=0.25+Math.abs(Math.sin(time*4))*0.35;
@@ -1390,6 +1569,7 @@ function animate(){
         const dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
 
         if(dist>APACHE_MAX_DIST){
+            soundManager.stopApacheSound(ap.mesh.uuid);
             scene.remove(ap.mesh);
             apaches.splice(i,1);
             continue;
@@ -1400,6 +1580,8 @@ function animate(){
         ap.shootTimer-=delta;
         if(ap.shootTimer<=0){
             ap.shootTimer=3+Math.random()*2;
+            soundManager.playOnce('apacheAttack', 0.75);
+            soundManager.playOnce('ufoHit', 0.9);
             ufoHP=Math.max(0,ufoHP-10);hpFill.style.width=ufoHP+'%';
             const origColor=bodyMat.emissive.getHex();
             bodyMat.emissive.setHex(0xff0000);setTimeout(()=>bodyMat.emissive.setHex(origColor),150);
@@ -1410,7 +1592,11 @@ function animate(){
         }else{
             ap.mesh.traverse(child=>{if(child.isMesh&&child.material)child.material.emissive.copy(_apacheBaseColor);});
         }
-        if(ap.hp<=0){createExplosion(ap.mesh.position.clone(),1.8);scene.remove(ap.mesh);apaches.splice(i,1);}
+        if(ap.hp<=0){
+            soundManager.stopApacheSound(ap.mesh.uuid);
+            soundManager.playOnce('apacheExplosion', 1.0);
+            createExplosion(ap.mesh.position.clone(),1.8);scene.remove(ap.mesh);apaches.splice(i,1);
+        }
     }
 
     // ======================================================
@@ -1461,6 +1647,7 @@ function animate(){
                 const dx=Math.abs(ufo.position.x-c.wx),dz=Math.abs(ufo.position.z-c.wz);
                 if(dx<hw&&dz<hd&&uy<c.h+UFO_RADIUS){
                     buildingCollisionCooldown=1.2;
+                    soundManager.playOnce('crash', 1.0);
                     ufoHP=Math.max(0,ufoHP-8);hpFill.style.width=ufoHP+'%';
                     const origEmissive=bodyMat.emissive.getHex();
                     bodyMat.emissive.setHex(0xff0000);setTimeout(()=>bodyMat.emissive.setHex(origEmissive),200);
