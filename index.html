@@ -396,7 +396,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000814);
 scene.fog = new THREE.FogExp2(0x000814, 0.004);
 
-const renderer = new THREE.WebGLRenderer({antialias:true});
+const renderer = new THREE.WebGLRenderer({antialias:true, logarithmicDepthBuffer:true});
 renderer.setSize(window.innerWidth,window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
 renderer.autoClear = false;
@@ -405,7 +405,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
 document.body.appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(55,window.innerWidth/window.innerHeight,0.1,800);
+const camera = new THREE.PerspectiveCamera(55,window.innerWidth/window.innerHeight,2,600);
 camera.position.set(0,40,55);
 
 const ambient = new THREE.AmbientLight(0x223355, 0.85);
