@@ -156,19 +156,29 @@ class SoundManager {
     constructor() {
         this.ctx = null;
         this.buffers = {};
-        this.droneSource = null;
-        this.hyperdriveSource = null;
-        this.abductSource = null;
-        this.apacheSources = new Map(); // mesh UUID → {src, gain}
-        this.prevIsFastMode = false;
-        this.prevAbductActive = false;
-        this.prevIsMoving = false;
         this.ready = false;
+
+        // 実際に再生中のソース
+        this.droneSource      = null;
+        this.hyperdriveSource = null;
+        this.abductSource     = null;
+        this.apacheSources    = new Map(); // uuid → {src, gain}
+
+        // ロード完了前でも記録しておく「あるべき状態」
+        this._wantMoving  = false;
+        this._wantFast    = false;
+        this._wantAbduct  = false;
     }
 
+    // ────────────────────────────────────────────
+    // 初期化（ユーザー操作後に1回だけ呼ぶ）
+    // ────────────────────────────────────────────
     async init() {
         if (this.ctx) return;
-        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        try {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        } catch(e) { console.warn('[Sound] AudioContext unavailable', e); return; }
+
         const files = {
             drone:             '232169__gladkiy__drone-engine.mp3',
             hyperdrive:        '273357__profmegavolt__hyperdrive-sound-effect-1.mp3',
@@ -182,130 +192,145 @@ class SoundManager {
             apacheExplosion:   '490266__anomaex__sci-fi_explosion_2.mp3',
             ufoHit:            '456272__soundfxstudio__distance-explosion-sound.mp3',
         };
+
         await Promise.all(Object.entries(files).map(async ([key, file]) => {
             try {
                 const res = await fetch(file);
                 if (!res.ok) throw new Error(res.status);
-                const buf = await res.arrayBuffer();
-                this.buffers[key] = await this.ctx.decodeAudioData(buf);
+                this.buffers[key] = await this.ctx.decodeAudioData(await res.arrayBuffer());
             } catch(e) { console.warn(`[Sound] Failed: ${file}`, e); }
         }));
+
         this.ready = true;
+        // ロード完了後、ゲームの現在状態をそのまま反映
+        this._applyLoopState(this._wantMoving, this._wantFast, this._wantAbduct);
     }
 
-    _makeSource(bufKey, loop, loopStart, loopEnd, volume) {
+    // ────────────────────────────────────────────
+    // 内部ヘルパー
+    // ────────────────────────────────────────────
+    _makeNode(bufKey, loop, loopStart, loopEnd, vol) {
         if (!this.ready || !this.buffers[bufKey]) return null;
-        const src = this.ctx.createBufferSource();
+        const src  = this.ctx.createBufferSource();
         src.buffer = this.buffers[bufKey];
-        src.loop = loop;
+        src.loop   = loop;
         if (loop && loopEnd > 0) { src.loopStart = loopStart; src.loopEnd = loopEnd; }
         const gain = this.ctx.createGain();
-        gain.gain.value = volume;
-        src.connect(gain);
-        gain.connect(this.ctx.destination);
+        gain.gain.value = vol;
+        src.connect(gain).connect(this.ctx.destination);
         return { src, gain };
     }
 
-    playOnce(bufKey, volume = 1, offset = 0) {
-        const s = this._makeSource(bufKey, false, 0, 0, volume);
-        if (!s) return;
-        s.src.start(0, offset);
+    _startLoop(bufKey, loopStart, loopEnd, vol, startOffset) {
+        const n = this._makeNode(bufKey, true, loopStart, loopEnd, vol);
+        if (!n) return null;
+        n.src.start(0, startOffset);
+        return n;
     }
 
-    startLoop(bufKey, loopStart, loopEnd, volume = 1, startOffset = -1) {
-        const s = this._makeSource(bufKey, true, loopStart, loopEnd, volume);
-        if (!s) return null;
-        s.src.start(0, startOffset < 0 ? loopStart : startOffset);
-        return s;
-    }
-
-    stopSource(s, fadeTime = 0.12) {
-        if (!s || !this.ctx) return;
+    _stopNode(n, fade = 0.15) {
+        if (!n || !this.ctx) return;
         try {
-            if (fadeTime > 0) {
-                s.gain.gain.setTargetAtTime(0, this.ctx.currentTime, fadeTime / 3);
-                s.src.stop(this.ctx.currentTime + fadeTime);
-            } else {
-                s.src.stop();
-            }
+            const now = this.ctx.currentTime;
+            n.gain.gain.setTargetAtTime(0, now, fade / 3);
+            n.src.stop(now + fade);
         } catch(e) {}
     }
 
-    update(isMoving, isFastMode, abductActive) {
-        if (!this.ready) return;
-
-        // ── 光速モード切替 ──
-        if (isFastMode !== this.prevIsFastMode) {
-            if (isFastMode) {
-                // 通常移動音を止めて光速音を再生（頭から、4.335-9.053をループ）
-                this.stopSource(this.droneSource);
-                this.droneSource = null;
-                this.hyperdriveSource = this.startLoop('hyperdrive', 4.335, 9.053, 0.75, 0);
-            } else {
-                // 光速解除：ループを外して残りを再生
-                if (this.hyperdriveSource) {
-                    try { this.hyperdriveSource.src.loop = false; } catch(e) {}
-                    // loopEnd以降を別ソースで再生
-                    const tail = this._makeSource('hyperdrive', false, 0, 0, 0.75);
-                    if (tail) tail.src.start(0, 9.053);
-                    this.stopSource(this.hyperdriveSource, 0.05);
-                    this.hyperdriveSource = null;
-                }
-                // 移動中ならドローン音を再開
-                if (isMoving) {
-                    this.droneSource = this.startLoop('drone', 10.571, 18.780, 0.65, 10.571);
-                }
-            }
-            this.prevIsFastMode = isFastMode;
+    // ────────────────────────────────────────────
+    // ループ音の状態を「今の目標」に合わせる
+    // ドライバ関数：ソースの有無と目標を比較して起動/停止
+    // ────────────────────────────────────────────
+    _applyLoopState(moving, fast, abduct) {
+        // ── 通常ドローン：移動中 かつ 非光速 のとき ──
+        const wantDrone = moving && !fast;
+        if (wantDrone && !this.droneSource) {
+            // loopStart から再生開始（前奏をスキップしてループ部分へ）
+            this.droneSource = this._startLoop('drone', 10.571, 18.780, 0.7, 10.571);
+        } else if (!wantDrone && this.droneSource) {
+            this._stopNode(this.droneSource, 0.3);
+            this.droneSource = null;
         }
 
-        // ── 通常移動音（非光速時）──
-        if (!isFastMode) {
-            if (isMoving && !this.prevIsMoving && !this.droneSource) {
-                this.droneSource = this.startLoop('drone', 10.571, 18.780, 0.65, 10.571);
-            } else if (!isMoving && this.prevIsMoving) {
-                this.stopSource(this.droneSource);
-                this.droneSource = null;
-            }
+        // ── 光速ドライブ ──
+        if (fast && !this.hyperdriveSource) {
+            // 頭（0秒）から再生し 4.335〜9.053 をループ
+            this.hyperdriveSource = this._startLoop('hyperdrive', 4.335, 9.053, 0.8, 0);
+        } else if (!fast && this.hyperdriveSource) {
+            // 光速解除：ループを止めて loopEnd 以降の残りを再生
+            const tail = this._makeNode('hyperdrive', false, 0, 0, 0.75);
+            if (tail) tail.src.start(0, 9.053);        // 9.053秒〜バッファ終端を再生
+            this._stopNode(this.hyperdriveSource, 0.05);
+            this.hyperdriveSource = null;
         }
-        this.prevIsMoving = isMoving;
 
-        // ── 吸い込みビーム音 ──
-        if (abductActive !== this.prevAbductActive) {
-            if (abductActive) {
-                this.abductSource = this.startLoop('abduct', 0.981, 2.127, 0.85, 0.981);
-            } else {
-                this.stopSource(this.abductSource);
-                this.abductSource = null;
-            }
-            this.prevAbductActive = abductActive;
+        // ── 吸い込みビーム ──
+        if (abduct && !this.abductSource) {
+            // 0.981〜2.127 をループ（最初も 0.981 から始める）
+            this.abductSource = this._startLoop('abduct', 0.981, 2.127, 0.85, 0.981);
+        } else if (!abduct && this.abductSource) {
+            this._stopNode(this.abductSource, 0.1);
+            this.abductSource = null;
         }
     }
 
-    // ── アパッチ個別管理 ──
-    startApacheSound(meshUUID) {
-        if (this.apacheSources.has(meshUUID)) return;
-        const s = this.startLoop('apacheMove', 0, 0, 0.5, 0);
-        if (s) this.apacheSources.set(meshUUID, s);
+    // ────────────────────────────────────────────
+    // メインループから毎フレーム呼ぶ
+    // ────────────────────────────────────────────
+    update(isMoving, isFast, isAbduct) {
+        // 目標状態を必ず更新（ready前でも記憶しておく）
+        this._wantMoving = isMoving;
+        this._wantFast   = isFast;
+        this._wantAbduct = isAbduct;
+        if (!this.ready) return;   // ロード前は記録だけして終わり
+        this._applyLoopState(isMoving, isFast, isAbduct);
     }
 
-    stopApacheSound(meshUUID) {
-        const s = this.apacheSources.get(meshUUID);
-        if (s) { this.stopSource(s, 0.35); this.apacheSources.delete(meshUUID); }
+    // ────────────────────────────────────────────
+    // 単発SE
+    // ────────────────────────────────────────────
+    playOnce(bufKey, vol = 1, offset = 0) {
+        const n = this._makeNode(bufKey, false, 0, 0, vol);
+        if (!n) return;
+        n.src.start(0, offset);
+    }
+
+    // ────────────────────────────────────────────
+    // アパッチ個別管理
+    // ────────────────────────────────────────────
+    startApacheSound(uuid) {
+        if (!this.ready || this.apacheSources.has(uuid)) return;
+        // ファイル全体をループ（ループ点指定なし）
+        const n = this._startLoop('apacheMove', 0, 0, 0.55, 0);
+        if (n) this.apacheSources.set(uuid, n);
+    }
+
+    stopApacheSound(uuid) {
+        const n = this.apacheSources.get(uuid);
+        if (n) { this._stopNode(n, 0.4); this.apacheSources.delete(uuid); }
+    }
+
+    setApacheVolume(uuid, vol) {
+        const n = this.apacheSources.get(uuid);
+        if (n && this.ctx) n.gain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.05);
     }
 }
 
 const soundManager = new SoundManager();
 
-// AudioContext はユーザー操作後に初期化
+// ── AudioContext はユーザー操作後に初期化（ブラウザの自動再生制限対策）──
 let _soundInitDone = false;
-function _ensureSound() {
+async function _ensureSound() {
     if (_soundInitDone) return;
     _soundInitDone = true;
-    soundManager.init();
+    await soundManager.init();
+    // init完了後、AudioContextがsuspendedなら再開
+    if (soundManager.ctx && soundManager.ctx.state === 'suspended') {
+        soundManager.ctx.resume();
+    }
 }
 ['keydown','pointerdown','touchstart'].forEach(ev =>
-    window.addEventListener(ev, _ensureSound, { once: false, passive: true })
+    window.addEventListener(ev, _ensureSound, { passive: true })
 );
 
 // ======================================================
@@ -1507,11 +1532,9 @@ function animate(){
 
     // アパッチ音量を距離で調整
     apaches.forEach(ap=>{
-        const s=soundManager.apacheSources.get(ap.mesh.uuid);
-        if(s){
-            const d=ufo.position.distanceTo(ap.mesh.position);
-            s.gain.gain.value=Math.max(0, Math.min(0.6, 1-d/250))*0.6;
-        }
+        const d=ufo.position.distanceTo(ap.mesh.position);
+        const vol = Math.max(0, 0.55 * (1 - d / 220));
+        soundManager.setApacheVolume(ap.mesh.uuid, vol);
     });
 
     if(abductActive){
