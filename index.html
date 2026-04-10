@@ -2,9 +2,18 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>UFO Abductor - OPEN WORLD</title>
     <style>
+        /* ── カスタムプロパティ ── */
+        :root {
+            --color-beam:   #00ff88;
+            --color-beam-d: #00cc66;
+            --color-attack: #ff3300;
+            --color-hp:     #ff4444;
+            --color-warn:   #ff2200;
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             overflow: hidden; background: #000; font-family: 'Courier New', monospace;
@@ -18,8 +27,8 @@
         }
         #score-board {
             position: absolute; top: 20px; left: 20px;
-            color: #00ff88; font-size: 20px; font-weight: bold;
-            text-shadow: 0 0 12px #00ff88;
+            color: var(--color-beam); font-size: 20px; font-weight: bold;
+            text-shadow: 0 0 12px var(--color-beam);
             letter-spacing: 2px;
         }
         #multiplier { font-size: 12px; color: #88ffcc; margin-top: 4px; opacity: 0.8; }
@@ -28,16 +37,16 @@
             color: #aaffdd; font-size: 13px; letter-spacing: 3px;
             text-shadow: 0 0 10px #00ffaa;
             background: rgba(0,0,0,0.4); padding: 5px 16px; border-radius: 20px;
-            border: 1px solid #00ff8844;
+            border: 1px solid rgba(0,255,136,0.27);
         }
         #hp-bar-container {
             position: absolute; top: 20px; right: 20px;
-            color: #ff4444; font-size: 11px; letter-spacing: 2px;
+            color: var(--color-hp); font-size: 11px; letter-spacing: 2px;
             text-align: center;
         }
         #hp-bar-bg {
             width: 140px; height: 8px; background: #1a0000;
-            border: 1px solid #ff4444; border-radius: 4px; margin-top: 3px;
+            border: 1px solid var(--color-hp); border-radius: 4px; margin-top: 3px;
         }
         #hp-fill {
             height: 100%; background: linear-gradient(90deg,#ff2200,#ff6600);
@@ -46,37 +55,132 @@
         #apache-warning {
             position: absolute; top: 50%; left: 50%;
             transform: translate(-50%,-50%);
-            color: #ff2200; font-size: 28px; font-weight: bold;
+            color: var(--color-warn); font-size: 28px; font-weight: bold;
             text-shadow: 0 0 20px #ff4400;
             pointer-events: none; opacity: 0;
             letter-spacing: 3px;
+        }
+        /* ── タイトル画面（起動時 & ゲームオーバー後に表示）── */
+        #title-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,5,0.78);
+            backdrop-filter: blur(2px);
+            z-index: 2000;
+            display: flex; align-items: center; justify-content: center;
+            flex-direction: column; gap: 0;
+            transition: opacity 0.6s;
+        }
+        #title-screen.hidden {
+            opacity: 0; pointer-events: none;
+        }
+
+        /* ゲームオーバーバナー（ゲーム開始前は非表示）*/
+        #ts-gameover-banner {
+            display: none;
+            flex-direction: column; align-items: center; gap: 6px;
+            margin-bottom: 36px;
+        }
+        #ts-gameover-banner.visible { display: flex; }
+        #ts-gameover-title {
+            color: var(--color-warn); font-size: 42px; font-weight: bold;
+            letter-spacing: 6px; text-shadow: 0 0 24px var(--color-warn);
+            animation: ts-pulse 1.8s ease-in-out infinite;
+        }
+        #ts-gameover-score {
+            color: #ccc; font-size: 13px; letter-spacing: 3px; margin-top: 4px;
+        }
+        @keyframes ts-pulse {
+            0%,100% { opacity: 1; } 50% { opacity: 0.65; }
+        }
+
+        /* メインタイトル */
+        #ts-title {
+            font-size: clamp(36px, 7vw, 72px);
+            font-weight: bold; letter-spacing: 6px;
+            color: var(--color-beam);
+            text-shadow: 0 0 30px var(--color-beam), 0 0 60px rgba(0,255,136,0.4);
+            line-height: 1;
+            animation: ts-glow 3s ease-in-out infinite;
+        }
+        @keyframes ts-glow {
+            0%,100% { text-shadow: 0 0 30px var(--color-beam), 0 0 60px rgba(0,255,136,0.4); }
+            50%      { text-shadow: 0 0 50px var(--color-beam), 0 0 90px rgba(0,255,136,0.6); }
+        }
+        #ts-subtitle {
+            font-size: 13px; letter-spacing: 8px; color: #44cc88;
+            margin-top: 10px; margin-bottom: 48px; opacity: 0.7;
+        }
+
+        /* 操作説明 */
+        #ts-controls {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px;
+            margin-bottom: 48px; font-size: 11px; letter-spacing: 2px;
+            color: rgba(0,255,136,0.5); text-align: left;
+        }
+        #ts-controls span { display: flex; align-items: center; gap: 8px; }
+        #ts-controls .key {
+            display: inline-block; border: 1px solid rgba(0,255,136,0.4);
+            padding: 1px 7px; border-radius: 3px; font-size: 10px;
+            color: rgba(0,255,136,0.7);
+        }
+
+        /* STARTボタン */
+        #ts-start-btn {
+            padding: 14px 56px;
+            background: transparent;
+            border: 2px solid var(--color-beam);
+            color: var(--color-beam);
+            font-family: 'Courier New', monospace;
+            font-size: 16px; font-weight: bold; letter-spacing: 5px;
+            cursor: pointer;
+            text-shadow: 0 0 10px var(--color-beam);
+            box-shadow: 0 0 20px rgba(0,255,136,0.2), inset 0 0 20px rgba(0,255,136,0.05);
+            transition: all 0.15s;
+            clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+        }
+        #ts-start-btn:hover {
+            background: rgba(0,255,136,0.12);
+            box-shadow: 0 0 35px rgba(0,255,136,0.4), inset 0 0 30px rgba(0,255,136,0.1);
+        }
+        #ts-start-btn:active { transform: scale(0.97); }
+
+        #ts-version {
+            position: absolute; bottom: 20px; right: 24px;
+            font-size: 10px; color: rgba(0,255,136,0.2); letter-spacing: 2px;
         }
         #controls {
             position: absolute; bottom: 30px; right: 20px;
             display: flex; gap: 16px; pointer-events: auto;
         }
+
+        /* ── ボタン基底スタイル ── */
         .btn {
             width: 80px; height: 80px;
             background: radial-gradient(circle, rgba(0,255,136,0.15) 0%, rgba(0,255,136,0.05) 100%);
-            border: 2px solid #00ff88; border-radius: 50%;
-            color: #00ff88; display: flex; align-items: center; justify-content: center;
-            font-weight: bold; font-size: 11px; letter-spacing: 1px;
-            cursor: pointer; text-shadow: 0 0 8px #00ff88;
-            box-shadow: 0 0 15px #00ff8833;
-            transition: all 0.1s; user-select: none;
-        }
-        .btn:active { background: radial-gradient(circle, rgba(0,255,136,0.4) 0%, rgba(0,255,136,0.1) 100%); }
-        #attack-btn {
-            width: 80px; height: 80px;
-            background: radial-gradient(circle, rgba(255,60,0,0.2) 0%, rgba(255,60,0,0.05) 100%);
-            border: 2px solid #ff3300; border-radius: 50%;
-            color: #ff5500; display: flex; align-items: center; justify-content: center;
-            font-weight: bold; font-size: 10px; letter-spacing: 1px;
-            cursor: pointer; text-shadow: 0 0 8px #ff3300;
-            box-shadow: 0 0 15px #ff330033;
+            border: 2px solid var(--color-beam); border-radius: 50%;
+            color: var(--color-beam); display: flex; align-items: center; justify-content: center;
+            font-family: 'Courier New', monospace; font-weight: bold; font-size: 11px; letter-spacing: 1px;
+            cursor: pointer; text-shadow: 0 0 8px var(--color-beam);
+            box-shadow: 0 0 15px rgba(0,255,136,0.2);
             transition: all 0.1s; user-select: none; pointer-events: auto;
         }
-        #attack-btn:active { background: radial-gradient(circle, rgba(255,60,0,0.5) 0%, rgba(255,60,0,0.15) 100%); }
+        .btn:active {
+            background: radial-gradient(circle, rgba(0,255,136,0.4) 0%, rgba(0,255,136,0.1) 100%);
+        }
+
+        /* ── ATTACKボタン差分のみ上書き ── */
+        .btn--attack {
+            background: radial-gradient(circle, rgba(255,60,0,0.2) 0%, rgba(255,60,0,0.05) 100%);
+            border-color: var(--color-attack);
+            color: #ff5500;
+            font-size: 10px;
+            text-shadow: 0 0 8px var(--color-attack);
+            box-shadow: 0 0 15px rgba(255,51,0,0.2);
+        }
+        .btn--attack:active {
+            background: radial-gradient(circle, rgba(255,60,0,0.5) 0%, rgba(255,60,0,0.15) 100%);
+        }
+
         #modal {
             display: none; position: fixed; top: 0; left: 0;
             width: 100%; height: 100%; background: rgba(0,0,0,0.92);
@@ -86,13 +190,13 @@
         #notification {
             position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            color: #00ff88; font-size: 36px; font-weight: bold;
-            text-shadow: 0 0 20px #00ff88;
+            color: var(--color-beam); font-size: 36px; font-weight: bold;
+            text-shadow: 0 0 20px var(--color-beam);
             pointer-events: none; opacity: 0; transition: opacity 0.3s; letter-spacing: 2px;
         }
         #controls-hint {
             position: absolute; bottom: 130px; left: 20px;
-            color: #00ff8855; font-size: 11px; letter-spacing: 1px; line-height: 1.8;
+            color: rgba(0,255,136,0.33); font-size: 11px; letter-spacing: 1px; line-height: 1.8;
         }
         #virtual-stick-container {
             display: none; position: absolute; bottom: 30px; left: 20px; pointer-events: auto;
@@ -106,13 +210,14 @@
         #stick-knob {
             width: 46px; height: 46px;
             background: radial-gradient(circle, rgba(0,255,136,0.55) 0%, rgba(0,255,136,0.25) 100%);
-            border: 2px solid #00ff88; border-radius: 50%;
+            border: 2px solid var(--color-beam); border-radius: 50%;
             position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            box-shadow: 0 0 12px #00ff8866; pointer-events: none;
+            box-shadow: 0 0 12px rgba(0,255,136,0.4); pointer-events: none;
         }
+        /* #hp-bar-container は right:20px top:20px なので speed-indicator は左上寄せに変更 */
         #speed-indicator {
-            position: absolute; top: 20px; right: 20px;
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
             color: #ff8800; font-size: 11px; letter-spacing: 2px;
             text-shadow: 0 0 8px #ff8800;
             opacity: 0; transition: opacity 0.2s;
@@ -133,8 +238,8 @@
     </div>
     <div id="speed-indicator">⚡ WARP SPEED</div>
     <div id="controls">
-        <div class="btn" id="abduct-btn">ABDUCT</div>
-        <div id="attack-btn">ATTACK</div>
+        <button class="btn" id="abduct-btn" aria-label="吸い込みビーム">ABDUCT</button>
+        <button class="btn btn--attack" id="attack-btn" aria-label="攻撃ビーム">ATTACK</button>
     </div>
     <div id="controls-hint">WASD / 矢印: 移動<br>ABDUCT: 吸い込み<br>SPACE: 攻撃ビーム</div>
     <div id="virtual-stick-container">
@@ -144,6 +249,32 @@
     <div id="apache-warning">⚠ APACHE INCOMING ⚠</div>
 </div>
 
+<!-- タイトル画面（起動時 & ゲームオーバー後） -->
+<div id="title-screen" role="dialog" aria-label="UFO ABDUCTOR">
+
+    <!-- ゲームオーバー時のみ表示されるバナー -->
+    <div id="ts-gameover-banner">
+        <div id="ts-gameover-title">GAME OVER</div>
+        <div id="ts-gameover-score"></div>
+    </div>
+
+    <div id="ts-title">UFO ABDUCTOR</div>
+    <div id="ts-subtitle">— OPEN WORLD —</div>
+
+    <div id="ts-controls">
+        <span><span class="key">W A S D</span> 移動</span>
+        <span><span class="key">ABDUCT</span> 吸い込みビーム</span>
+        <span><span class="key">SPACE</span> 攻撃ビーム</span>
+        <span><span class="key">ATTACK</span> 攻撃ビーム</span>
+    </div>
+
+    <button id="ts-start-btn">START</button>
+
+    <div id="ts-version">v2.0 · OPEN WORLD</div>
+</div>
+
+<!-- セキュリティ強化: 本番環境では integrity="sha384-<ハッシュ>" crossorigin="anonymous" を追加してください
+     cdnjs.cloudflare.com の Three.js r128 ページからSRIハッシュを取得できます -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 window.addEventListener('load', () => {
@@ -234,7 +365,7 @@ class SoundManager {
             const now = this.ctx.currentTime;
             n.gain.gain.setTargetAtTime(0, now, fade / 3);
             n.src.stop(now + fade);
-        } catch(e) {}
+        } catch(e) { console.warn('[Sound] _stopNode failed:', e); }
     }
 
     // ────────────────────────────────────────────
@@ -330,7 +461,7 @@ async function _ensureSound() {
     }
 }
 ['keydown','pointerdown','touchstart'].forEach(ev =>
-    window.addEventListener(ev, _ensureSound, { passive: true })
+    window.addEventListener(ev, ()=>{ if(isGameStarted) _ensureSound(); }, { passive: true })
 );
 
 // ======================================================
@@ -426,6 +557,7 @@ scene.add(new THREE.Points(starGeo,new THREE.PointsMaterial({color:0xffffff,size
 // ======================================================
 const chunkCache = new Map();
 const activeChunks = new Set();
+const chunksInScene = new Set(); // scene.children.includes() の O(n) を回避
 const buildingColliders = new Map();
 let buildingCollisionCooldown = 0;
 
@@ -591,6 +723,7 @@ function buildChunk(cx,cz){
     }
 
     scene.add(group);
+    chunksInScene.add(key);
     chunkCache.set(key,group);
 
     const colliders=[];
@@ -619,7 +752,7 @@ function spawnBiomeObjects(group,cx,cz){
                 const lx=rng()*(CHUNK_SIZE-8)+4,lz=rng()*(CHUNK_SIZE-8)+4;
                 const h=20+rng()*60,w=8+rng()*14,d=8+rng()*14;
                 const colors=[0x1e2535,0x252535,0x181828,0x222230,0x1a2220];
-                const bldg=makeBuilding(w,d,h,colors[Math.floor(rng()*colors.length)]);
+                const bldg=makeBuilding(w,d,h,colors[Math.floor(rng()*colors.length)],rng);
                 bldg.position.set(lx,0,lz);group.add(bldg);
             }
         }else if(biome===BIOME.SUBURB){
@@ -718,7 +851,7 @@ function placeDecoration(group,biome,lx,lz,rng,deciduousBatch,pineBatch,bushBatc
     }else if(biome===BIOME.URBAN){
         const h=20+rng()*60,w=8+rng()*14,d=8+rng()*14;
         const colors=[0x1e2535,0x252535,0x181828,0x222230,0x1a2220];
-        const bldg=makeBuilding(w,d,h,colors[Math.floor(rng()*colors.length)]);
+        const bldg=makeBuilding(w,d,h,colors[Math.floor(rng()*colors.length)],rng);
         bldg.position.set(lx,0,lz);group.add(bldg);
     }else if(biome===BIOME.INDUSTRIAL){
         const t=Math.floor(rng()*6);
@@ -754,7 +887,9 @@ function makePalmTree(){
     return g;
 }
 
-function makeBuilding(w,d,h,color){
+function makeBuilding(w,d,h,color,rng){
+    // rng が渡されない場合は Math.random をフォールバックとして使う
+    const _rng = rng || Math.random.bind(Math);
     const g=new THREE.Group();
     const rows=Math.max(2,Math.floor(h/4));
     const cols=Math.max(2,Math.floor(w/3));
@@ -781,7 +916,7 @@ function makeBuilding(w,d,h,color){
     g.add(body);
 
     const neonColors=[0xff2266,0x00ffcc,0xff8800,0x44aaff,0xff44ff,0x00ff88];
-    const nc=neonColors[Math.floor(Math.random()*neonColors.length)];
+    const nc=neonColors[Math.floor(_rng()*neonColors.length)]; // ← シードRNG使用
     const neonBar=new THREE.Mesh(
         new THREE.BoxGeometry(w*0.65,0.55,0.25),
         new THREE.MeshBasicMaterial({color:nc})
@@ -1427,6 +1562,7 @@ function updateChunks(){
     toRemove.forEach(key=>{
         const chunk=chunkCache.get(key);
         if(chunk)scene.remove(chunk);
+        chunksInScene.delete(key);
         activeChunks.delete(key);buildingColliders.delete(key);
         const[cx,cz]=key.split(',').map(Number);
         for(let i=targets.length-1;i>=0;i--){
@@ -1436,7 +1572,7 @@ function updateChunks(){
     });
     needed.forEach(key=>{
         const chunk=chunkCache.get(key);
-        if(chunk&&!scene.children.includes(chunk))scene.add(chunk);
+        if(chunk&&!chunksInScene.has(key)){scene.add(chunk);chunksInScene.add(key);}
     });
 }
 
@@ -1454,10 +1590,61 @@ const biomeLabel=document.getElementById('biome-label');
 let lastBiomeLabel='';
 const hpFill=document.getElementById('hp-fill');
 const speedIndicator=document.getElementById('speed-indicator');
+// ループ内で毎フレーム呼ばないようにキャッシュ
+const scoreEl=document.getElementById('score');
+const countEl=document.getElementById('count');
+const apacheWarningEl=document.getElementById('apache-warning');
 
 // ======================================================
-// INPUT
+// タイトル画面 / ゲームオーバー 管理
 // ======================================================
+const titleScreenEl      = document.getElementById('title-screen');
+const tsGameoverBanner   = document.getElementById('ts-gameover-banner');
+const tsGameoverScore    = document.getElementById('ts-gameover-score');
+const tsStartBtn         = document.getElementById('ts-start-btn');
+
+let isGameStarted = false;
+let isGameOver    = false;
+
+function startGame(){
+    isGameStarted = true;
+    // フェードアウトしてからポインターイベントも無効化
+    titleScreenEl.classList.add('hidden');
+    // sound 初期化（ユーザー操作起点が必要なため START ボタン押下時に行う）
+    _ensureSound();
+}
+
+function triggerGameOver(){
+    if(isGameOver) return;
+    isGameOver = true;
+    // 少し間を置いてタイトル画面へ戻る
+    setTimeout(()=>{
+        tsGameoverScore.textContent = `SCORE: ${score}  |  ABDUCTED: ${abductCount}`;
+        tsGameoverBanner.classList.add('visible');
+        tsStartBtn.textContent = 'PLAY AGAIN';
+        titleScreenEl.classList.remove('hidden');
+    }, 1200);
+}
+
+tsStartBtn.addEventListener('click', ()=>{
+    if(!isGameStarted){
+        startGame();
+    } else {
+        // ゲームオーバー後の「PLAY AGAIN」→ リロードでリセット
+        location.reload();
+    }
+});
+
+// 衝突フラッシュ用 div を事前生成して再利用（毎フレームの createElement を回避）
+const flashDiv=document.createElement('div');
+flashDiv.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,80,0,0.35);pointer-events:none;z-index:999;transition:opacity 0.4s;opacity:0';
+document.body.appendChild(flashDiv);
+let _flashTimeout1=null,_flashTimeout2=null;
+function triggerFlash(){
+    clearTimeout(_flashTimeout1);clearTimeout(_flashTimeout2);
+    flashDiv.style.transition='none';flashDiv.style.opacity='1';
+    _flashTimeout1=setTimeout(()=>{flashDiv.style.transition='opacity 0.4s';flashDiv.style.opacity='0';},80);
+}
 document.addEventListener('contextmenu',e=>e.preventDefault());
 const isTouchDevice=('ontouchstart' in window)||(navigator.maxTouchPoints>0);
 const stickContainer=document.getElementById('virtual-stick-container');
@@ -1480,7 +1667,7 @@ const resetStick=()=>{vStick.x=0;vStick.y=0;vStick.active=false;vStick.id=null;s
 stickBase.addEventListener('touchend',e=>{e.preventDefault();resetStick();},{passive:false});
 stickBase.addEventListener('touchcancel',e=>{e.preventDefault();resetStick();},{passive:false});
 window.addEventListener('keydown',e=>keys[e.code]=true);
-window.addEventListener('keyup',e=>{keys[e.code]=false;if(e.code==='Space')keys['_spaceUsed']=false;});
+window.addEventListener('keyup',e=>{keys[e.code]=false;if(e.code==='Space')spaceUsed=false;});
 const abductBtn=document.getElementById('abduct-btn');
 abductBtn.addEventListener('pointerdown',()=>isAbducting=true);
 abductBtn.addEventListener('pointerup',()=>isAbducting=false);
@@ -1523,12 +1710,31 @@ for(let i=0;i<LED_TRAIL_POOL_SIZE;i++){
 const camTarget=new THREE.Vector3(0,40,55);
 const camLookTarget=new THREE.Vector3(0,30,0);
 let chunkUpdateTimer=0,camShakeTimer=0,moveStreak=0,currentSpeed=2.8;
+let spaceUsed=false; // keys['_spaceUsed'] から分離
 const prevUfoPos=new THREE.Vector3(),ufoMoveDir=new THREE.Vector3(0,0,-1);
 const _streakQuat=new THREE.Quaternion(),_zAxis=new THREE.Vector3(0,0,1);
 
 function animate(){
     requestAnimationFrame(animate);
     const time=clock.getElapsedTime();
+
+    // ── タイトル画面中: UFOだけホバーさせて背景として見せる ──
+    if(!isGameStarted){
+        ufo.position.y=55+Math.sin(time*0.8)*1.2;
+        ufo.rotation.y=time*0.3;
+        antennaTop.material.color.setHSL(0,1,0.5+0.5*Math.sin(time*5));
+        ledRing.children.forEach((led,i)=>{
+            led.material.color.setHSL(((i/24)+time*0.4)%1,1.0,0.65);
+        });
+        domeMat.emissiveIntensity=0.8+Math.sin(time*2)*0.4;
+        renderer.clear();
+        renderer.render(scene,camera);
+        return;
+    }
+
+    // ── ゲームオーバー後: ループ停止（タイトル画面が表示される）──
+    if(isGameOver)return;
+
     const delta=0.016;
 
     const isMoving=keys['KeyW']||keys['KeyS']||keys['KeyA']||keys['KeyD']||keys['ArrowUp']||keys['ArrowDown']||keys['ArrowLeft']||keys['ArrowRight']||vStick.active;
@@ -1641,7 +1847,7 @@ function animate(){
         groundRingMat.opacity=Math.max(groundRingMat.opacity-0.06,0);
     }
 
-    if(keys['Space']&&!keys['_spaceUsed']){keys['_spaceUsed']=true;fireAttackBeam();}
+    if(keys['Space']&&!spaceUsed){spaceUsed=true;fireAttackBeam();}
 
     ledRing.children.forEach((led,i)=>{
         const hue=((i/24)+time*0.4)%1;
@@ -1677,8 +1883,7 @@ function animate(){
 
     apacheSpawnTimer+=delta;
     if(apacheSpawnTimer>=APACHE_SPAWN_INTERVAL){apacheSpawnTimer=0;spawnApache();}
-    const warningEl=document.getElementById('apache-warning');
-    if(apacheWarningTimer>0){apacheWarningTimer-=delta;warningEl.style.opacity=Math.min(1,apacheWarningTimer).toString();if(apacheWarningTimer<=0)warningEl.style.opacity='0';}
+    if(apacheWarningTimer>0){apacheWarningTimer-=delta;apacheWarningEl.style.opacity=Math.min(1,apacheWarningTimer).toString();if(apacheWarningTimer<=0)apacheWarningEl.style.opacity='0';}
 
     for(let i=apaches.length-1;i>=0;i--){
         const ap=apaches[i];
@@ -1701,6 +1906,7 @@ function animate(){
             soundManager.playOnce('apacheAttack', 0.75);
             soundManager.playOnce('ufoHit', 0.9);
             ufoHP=Math.max(0,ufoHP-10);hpFill.style.width=ufoHP+'%';
+            if(ufoHP<=0){triggerGameOver();}
             const origColor=bodyMat.emissive.getHex();
             bodyMat.emissive.setHex(0xff0000);setTimeout(()=>bodyMat.emissive.setHex(origColor),150);
         }
@@ -1745,7 +1951,7 @@ function animate(){
             t.mesh.position.y+=t.vy;t.mesh.rotation.y+=0.06;t.mesh.rotation.x+=0.02;
             if(t.mesh.position.y>ufo.position.y-2){
                 score+=t.score;abductCount++;
-                document.getElementById('score').textContent=score;document.getElementById('count').textContent=abductCount;
+                scoreEl.textContent=score;countEl.textContent=abductCount;
                 showNotif(t.title+'  +'+t.score);
                 soundManager.playOnce('pop', 1.0);
                 collected.push({title:t.title,icon:t.icon,score:t.score,type:t.type});
@@ -1768,13 +1974,12 @@ function animate(){
                     buildingCollisionCooldown=1.2;
                     soundManager.playOnce('crash', 1.0);
                     ufoHP=Math.max(0,ufoHP-8);hpFill.style.width=ufoHP+'%';
+                    if(ufoHP<=0){triggerGameOver();}
                     const origEmissive=bodyMat.emissive.getHex();
                     bodyMat.emissive.setHex(0xff0000);setTimeout(()=>bodyMat.emissive.setHex(origEmissive),200);
                     const hitPt=new THREE.Vector3((ufo.position.x+c.wx)/2,Math.min(uy,c.h),(ufo.position.z+c.wz)/2);
                     createExplosion(hitPt,1.0);
-                    const flashDiv=document.createElement('div');
-                    flashDiv.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,80,0,0.35);pointer-events:none;z-index:999;transition:opacity 0.4s';
-                    document.body.appendChild(flashDiv);setTimeout(()=>{flashDiv.style.opacity='0';setTimeout(()=>flashDiv.remove(),400);},80);
+                    triggerFlash();
                     camShakeTimer=0.35;showNotif('IMPACT! -8 HP');break;
                 }
             }
