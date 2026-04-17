@@ -1,0 +1,2525 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UFO Abductor - OPEN WORLD</title>
+    <style>
+        /* ── カスタムプロパティ ── */
+        :root {
+            --color-beam:   #00ff88;
+            --color-beam-d: #00cc66;
+            --color-attack: #ff3300;
+            --color-hp:     #ff4444;
+            --color-warn:   #ff2200;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            overflow: hidden; background: #000; font-family: 'Courier New', monospace;
+            user-select: none; -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+        canvas { display: block; }
+        #ui-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10;
+        }
+        #score-board {
+            position: absolute; top: 20px; left: 20px;
+            color: var(--color-beam); font-size: 20px; font-weight: bold;
+            text-shadow: 0 0 12px var(--color-beam);
+            letter-spacing: 2px;
+        }
+        #multiplier { font-size: 12px; color: #88ffcc; margin-top: 4px; opacity: 0.8; }
+        #biome-label {
+            position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+            color: #aaffdd; font-size: 13px; letter-spacing: 3px;
+            text-shadow: 0 0 10px #00ffaa;
+            background: rgba(0,0,0,0.4); padding: 5px 16px; border-radius: 20px;
+            border: 1px solid rgba(0,255,136,0.27);
+        }
+        #hp-bar-container {
+            position: absolute; top: 20px; right: 20px;
+            color: var(--color-hp); font-size: 11px; letter-spacing: 2px;
+            text-align: center;
+        }
+        #hp-bar-bg {
+            width: 140px; height: 8px; background: #1a0000;
+            border: 1px solid var(--color-hp); border-radius: 4px; margin-top: 3px;
+        }
+        #hp-fill {
+            height: 100%; background: linear-gradient(90deg,#ff2200,#ff6600);
+            border-radius: 4px; transition: width 0.3s;
+        }
+        #apache-warning {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%,-50%);
+            color: var(--color-warn); font-size: 28px; font-weight: bold;
+            text-shadow: 0 0 20px #ff4400;
+            pointer-events: none; opacity: 0;
+            letter-spacing: 3px;
+        }
+        #military-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; opacity: 0; transition: opacity 0.8s;
+            box-shadow: inset 0 0 80px 30px rgba(255,80,0,0.55);
+            border: 3px solid rgba(255,80,0,0);
+            z-index: 9;
+        }
+        #military-overlay.active {
+            opacity: 1;
+            border-color: rgba(255,80,0,0.6);
+            animation: milFlicker 1.8s infinite;
+        }
+        @keyframes milFlicker {
+            0%,100%{box-shadow:inset 0 0 80px 30px rgba(255,80,0,0.55);}
+            50%{box-shadow:inset 0 0 100px 40px rgba(255,60,0,0.35);}
+        }
+        #military-banner {
+            position: fixed; top: 0; left: 0; width: 100%;
+            background: repeating-linear-gradient(
+                -45deg, rgba(255,80,0,0.7) 0px, rgba(255,80,0,0.7) 10px,
+                rgba(0,0,0,0.7) 10px, rgba(0,0,0,0.7) 20px
+            );
+            color: #fff; font-size: 13px; font-weight: bold; letter-spacing: 4px;
+            text-align: center; padding: 5px 0;
+            pointer-events: none; opacity: 0; transition: opacity 0.5s;
+            z-index: 10; text-shadow: 0 0 8px #ff4400;
+        }
+        #military-banner.active { opacity: 1; }
+        /* ── タイトル画面（起動時 & ゲームオーバー後に表示）── */
+        #title-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,5,0.78);
+            backdrop-filter: blur(2px);
+            z-index: 2000;
+            display: flex; align-items: center; justify-content: center;
+            flex-direction: column; gap: 0;
+            transition: opacity 0.6s;
+        }
+        #title-screen.hidden {
+            opacity: 0; pointer-events: none;
+        }
+
+        /* ゲームオーバーバナー（ゲーム開始前は非表示）*/
+        #ts-gameover-banner {
+            display: none;
+            flex-direction: column; align-items: center; gap: 6px;
+            margin-bottom: 36px;
+        }
+        #ts-gameover-banner.visible { display: flex; }
+        #ts-gameover-title {
+            color: var(--color-warn); font-size: 42px; font-weight: bold;
+            letter-spacing: 6px; text-shadow: 0 0 24px var(--color-warn);
+            animation: ts-pulse 1.8s ease-in-out infinite;
+        }
+        #ts-gameover-score {
+            color: #ccc; font-size: 13px; letter-spacing: 3px; margin-top: 4px;
+        }
+        @keyframes ts-pulse {
+            0%,100% { opacity: 1; } 50% { opacity: 0.65; }
+        }
+
+        /* メインタイトル */
+        #ts-title {
+            font-size: clamp(36px, 7vw, 72px);
+            font-weight: bold; letter-spacing: 6px;
+            color: var(--color-beam);
+            text-shadow: 0 0 30px var(--color-beam), 0 0 60px rgba(0,255,136,0.4);
+            line-height: 1;
+            animation: ts-glow 3s ease-in-out infinite;
+        }
+        @keyframes ts-glow {
+            0%,100% { text-shadow: 0 0 30px var(--color-beam), 0 0 60px rgba(0,255,136,0.4); }
+            50%      { text-shadow: 0 0 50px var(--color-beam), 0 0 90px rgba(0,255,136,0.6); }
+        }
+        #ts-subtitle {
+            font-size: 13px; letter-spacing: 8px; color: #44cc88;
+            margin-top: 10px; margin-bottom: 48px; opacity: 0.7;
+        }
+
+        /* 操作説明 */
+        #ts-controls {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px;
+            margin-bottom: 48px; font-size: 11px; letter-spacing: 2px;
+            color: rgba(0,255,136,0.5); text-align: left;
+        }
+        #ts-controls span { display: flex; align-items: center; gap: 8px; }
+        #ts-controls .key {
+            display: inline-block; border: 1px solid rgba(0,255,136,0.4);
+            padding: 1px 7px; border-radius: 3px; font-size: 10px;
+            color: rgba(0,255,136,0.7);
+        }
+
+        /* STARTボタン */
+        #ts-start-btn {
+            padding: 14px 56px;
+            background: transparent;
+            border: 2px solid var(--color-beam);
+            color: var(--color-beam);
+            font-family: 'Courier New', monospace;
+            font-size: 16px; font-weight: bold; letter-spacing: 5px;
+            cursor: pointer;
+            text-shadow: 0 0 10px var(--color-beam);
+            box-shadow: 0 0 20px rgba(0,255,136,0.2), inset 0 0 20px rgba(0,255,136,0.05);
+            transition: all 0.15s;
+            clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+        }
+        #ts-start-btn:hover {
+            background: rgba(0,255,136,0.12);
+            box-shadow: 0 0 35px rgba(0,255,136,0.4), inset 0 0 30px rgba(0,255,136,0.1);
+        }
+        #ts-start-btn:active { transform: scale(0.97); }
+
+        #ts-version {
+            position: absolute; bottom: 20px; right: 24px;
+            font-size: 10px; color: rgba(0,255,136,0.2); letter-spacing: 2px;
+        }
+        #controls {
+            position: absolute; bottom: 30px; right: 20px;
+            display: flex; gap: 16px; pointer-events: auto;
+        }
+
+        /* ── ボタン基底スタイル ── */
+        .btn {
+            width: 80px; height: 80px;
+            background: radial-gradient(circle, rgba(0,255,136,0.15) 0%, rgba(0,255,136,0.05) 100%);
+            border: 2px solid var(--color-beam); border-radius: 50%;
+            color: var(--color-beam); display: flex; align-items: center; justify-content: center;
+            font-family: 'Courier New', monospace; font-weight: bold; font-size: 11px; letter-spacing: 1px;
+            cursor: pointer; text-shadow: 0 0 8px var(--color-beam);
+            box-shadow: 0 0 15px rgba(0,255,136,0.2);
+            transition: all 0.1s; user-select: none; pointer-events: auto;
+        }
+        .btn:active {
+            background: radial-gradient(circle, rgba(0,255,136,0.4) 0%, rgba(0,255,136,0.1) 100%);
+        }
+
+        /* ── ATTACKボタン差分のみ上書き ── */
+        .btn--attack {
+            background: radial-gradient(circle, rgba(255,60,0,0.2) 0%, rgba(255,60,0,0.05) 100%);
+            border-color: var(--color-attack);
+            color: #ff5500;
+            font-size: 10px;
+            text-shadow: 0 0 8px var(--color-attack);
+            box-shadow: 0 0 15px rgba(255,51,0,0.2);
+        }
+        .btn--attack:active {
+            background: radial-gradient(circle, rgba(255,60,0,0.5) 0%, rgba(255,60,0,0.15) 100%);
+        }
+
+        #modal {
+            display: none; position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%; background: rgba(0,0,0,0.92);
+            z-index: 1000; overflow-y: auto; color: #fff;
+            backdrop-filter: blur(4px);
+        }
+        #notification {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--color-beam); font-size: 36px; font-weight: bold;
+            text-shadow: 0 0 20px var(--color-beam);
+            pointer-events: none; opacity: 0; transition: opacity 0.3s; letter-spacing: 2px;
+        }
+        #controls-hint {
+            position: absolute; bottom: 130px; left: 20px;
+            color: rgba(0,255,136,0.33); font-size: 11px; letter-spacing: 1px; line-height: 1.8;
+        }
+        #virtual-stick-container {
+            display: none; position: absolute; bottom: 30px; left: 20px; pointer-events: auto;
+        }
+        #stick-base {
+            width: 110px; height: 110px;
+            background: radial-gradient(circle, rgba(0,255,136,0.08) 0%, rgba(0,255,136,0.02) 100%);
+            border: 2px solid rgba(0,255,136,0.35); border-radius: 50%;
+            position: relative; touch-action: none;
+        }
+        #stick-knob {
+            width: 46px; height: 46px;
+            background: radial-gradient(circle, rgba(0,255,136,0.55) 0%, rgba(0,255,136,0.25) 100%);
+            border: 2px solid var(--color-beam); border-radius: 50%;
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 12px rgba(0,255,136,0.4); pointer-events: none;
+        }
+        /* #hp-bar-container は right:20px top:20px なので speed-indicator は左上寄せに変更 */
+        #speed-indicator {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            color: #ff8800; font-size: 11px; letter-spacing: 2px;
+            text-shadow: 0 0 8px #ff8800;
+            opacity: 0; transition: opacity 0.2s;
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-container">
+    <div id="score-board">
+        SCORE: <span id="score">0</span>
+        <div id="multiplier">ABDUCTED: <span id="count">0</span></div>
+    </div>
+    <div id="biome-label">GRASSLAND</div>
+    <div id="hp-bar-container">
+        UFO HP
+        <div id="hp-bar-bg"><div id="hp-fill" style="width:100%"></div></div>
+    </div>
+    <div id="speed-indicator">⚡ WARP SPEED</div>
+    <div id="controls">
+        <button class="btn" id="abduct-btn" aria-label="吸い込みビーム">ABDUCT</button>
+        <button class="btn btn--attack" id="attack-btn" aria-label="攻撃ビーム">ATTACK</button>
+    </div>
+    <div id="controls-hint">WASD / 矢印: 移動<br>ABDUCT: 吸い込み<br>SPACE: 攻撃ビーム</div>
+    <div id="virtual-stick-container">
+        <div id="stick-base"><div id="stick-knob"></div></div>
+    </div>
+    <div id="notification">+100</div>
+    <div id="apache-warning">⚠ APACHE INCOMING ⚠</div>
+    <div id="military-overlay"></div>
+    <div id="military-banner">⚠ DANGER — RESTRICTED MILITARY AREA — UNAUTHORIZED AIRCRAFT WILL BE DESTROYED ⚠</div>
+</div>
+
+<!-- タイトル画面（起動時 & ゲームオーバー後） -->
+<div id="title-screen" role="dialog" aria-label="UFO ABDUCTOR">
+
+    <!-- ゲームオーバー時のみ表示されるバナー -->
+    <div id="ts-gameover-banner">
+        <div id="ts-gameover-title">GAME OVER</div>
+        <div id="ts-gameover-score"></div>
+    </div>
+
+    <div id="ts-title">UFO ABDUCTOR</div>
+    <div id="ts-subtitle">— OPEN WORLD —</div>
+
+    <div id="ts-controls">
+        <span><span class="key">W A S D</span> 移動</span>
+        <span><span class="key">ABDUCT</span> 吸い込みビーム</span>
+        <span><span class="key">SPACE</span> 攻撃ビーム</span>
+        <span><span class="key">ATTACK</span> 攻撃ビーム</span>
+    </div>
+
+    <button id="ts-start-btn">START</button>
+
+    <div id="ts-version">v2.0 · OPEN WORLD</div>
+</div>
+
+<!-- セキュリティ強化: 本番環境では integrity="sha384-<ハッシュ>" crossorigin="anonymous" を追加してください
+     cdnjs.cloudflare.com の Three.js r128 ページからSRIハッシュを取得できます -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+window.addEventListener('load', () => {
+
+// ======================================================
+// SOUND SYSTEM
+// ======================================================
+class SoundManager {
+    constructor() {
+        this.ctx = null;
+        this.buffers = {};
+        this.ready = false;
+
+        // 実際に再生中のソース
+        this.droneSource      = null;
+        this.hyperdriveSource = null;
+        this.abductSource     = null;
+        this.apacheSources    = new Map(); // uuid → {src, gain}
+
+        // ロード完了前でも記録しておく「あるべき状態」
+        this._wantMoving  = false;
+        this._wantFast    = false;
+        this._wantAbduct  = false;
+    }
+
+    // ────────────────────────────────────────────
+    // 初期化（ユーザー操作後に1回だけ呼ぶ）
+    // ────────────────────────────────────────────
+    async init() {
+        if (this.ctx) return;
+        try {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        } catch(e) { console.warn('[Sound] AudioContext unavailable', e); return; }
+
+        const files = {
+            drone:             '232169__gladkiy__drone-engine.mp3',
+            hyperdrive:        '273357__profmegavolt__hyperdrive-sound-effect-1.mp3',
+            crash:             'crash impact building.mp3',
+            abduct:            '514556__lilmati__ufo-abducting-01.mp3',
+            attackBeam:        '440779__wcoltd__piplaser.mp3',
+            groundExplosion:   '560580__theplax__explosion-1.mp3',
+            buildingExplosion: '490266__anomaex__sci-fi_explosion_2.mp3',
+            apacheMove:        '554511__robinhood76__09980-fast-helicopter-flight-loop.mp3',
+            apacheAttack:      '521377__jarusca__rocket-launch.mp3',
+            apacheExplosion:   '490266__anomaex__sci-fi_explosion_2.mp3',
+            ufoHit:            '456272__soundfxstudio__distance-explosion-sound.mp3',
+            pop:               'pop.mp3',
+        };
+
+        await Promise.all(Object.entries(files).map(async ([key, file]) => {
+            try {
+                const res = await fetch(file);
+                if (!res.ok) throw new Error(res.status);
+                this.buffers[key] = await this.ctx.decodeAudioData(await res.arrayBuffer());
+            } catch(e) { console.warn(`[Sound] Failed: ${file}`, e); }
+        }));
+
+        this.ready = true;
+        // ロード完了後、ゲームの現在状態をそのまま反映
+        this._applyLoopState(this._wantMoving, this._wantFast, this._wantAbduct);
+    }
+
+    // ────────────────────────────────────────────
+    // 内部ヘルパー
+    // ────────────────────────────────────────────
+    _makeNode(bufKey, loop, loopStart, loopEnd, vol) {
+        if (!this.ready || !this.buffers[bufKey]) return null;
+        const src  = this.ctx.createBufferSource();
+        src.buffer = this.buffers[bufKey];
+        src.loop   = loop;
+        if (loop && loopEnd > 0) { src.loopStart = loopStart; src.loopEnd = loopEnd; }
+        const gain = this.ctx.createGain();
+        gain.gain.value = vol;
+        src.connect(gain).connect(this.ctx.destination);
+        return { src, gain };
+    }
+
+    _startLoop(bufKey, loopStart, loopEnd, vol, startOffset) {
+        const n = this._makeNode(bufKey, true, loopStart, loopEnd, vol);
+        if (!n) return null;
+        n.src.start(0, startOffset);
+        return n;
+    }
+
+    _stopNode(n, fade = 0.15) {
+        if (!n || !this.ctx) return;
+        try {
+            const now = this.ctx.currentTime;
+            n.gain.gain.setTargetAtTime(0, now, fade / 3);
+            n.src.stop(now + fade);
+        } catch(e) { console.warn('[Sound] _stopNode failed:', e); }
+    }
+
+    // ────────────────────────────────────────────
+    // ループ音の状態を「今の目標」に合わせる
+    // ドライバ関数：ソースの有無と目標を比較して起動/停止
+    // ────────────────────────────────────────────
+    _applyLoopState(moving, fast, abduct) {
+        // ── 通常ドローン：移動中 かつ 非光速 のとき ──
+        const wantDrone = moving && !fast;
+        if (wantDrone && !this.droneSource) {
+            // loopStart から再生開始（前奏をスキップしてループ部分へ）
+            this.droneSource = this._startLoop('drone', 10.571, 18.780, 0.7, 10.571);
+        } else if (!wantDrone && this.droneSource) {
+            this._stopNode(this.droneSource, 0.3);
+            this.droneSource = null;
+        }
+
+        // ── 光速ドライブ ──
+        if (fast && !this.hyperdriveSource) {
+            // 頭（0秒）から再生し 4.335〜9.053 をループ
+            this.hyperdriveSource = this._startLoop('hyperdrive', 4.335, 9.053, 0.8, 0);
+        } else if (!fast && this.hyperdriveSource) {
+            // 光速解除：ループを止めて loopEnd 以降の残りを再生
+            const tail = this._makeNode('hyperdrive', false, 0, 0, 0.75);
+            if (tail) tail.src.start(0, 9.053);        // 9.053秒〜バッファ終端を再生
+            this._stopNode(this.hyperdriveSource, 0.05);
+            this.hyperdriveSource = null;
+        }
+
+        // ── 吸い込みビーム ──
+        if (abduct && !this.abductSource) {
+            // 0.981〜2.127 をループ（最初も 0.981 から始める）
+            this.abductSource = this._startLoop('abduct', 0.981, 2.127, 0.85, 0.981);
+        } else if (!abduct && this.abductSource) {
+            this._stopNode(this.abductSource, 0.1);
+            this.abductSource = null;
+        }
+    }
+
+    // ────────────────────────────────────────────
+    // メインループから毎フレーム呼ぶ
+    // ────────────────────────────────────────────
+    update(isMoving, isFast, isAbduct) {
+        // 目標状態を必ず更新（ready前でも記憶しておく）
+        this._wantMoving = isMoving;
+        this._wantFast   = isFast;
+        this._wantAbduct = isAbduct;
+        if (!this.ready) return;   // ロード前は記録だけして終わり
+        this._applyLoopState(isMoving, isFast, isAbduct);
+    }
+
+    // ────────────────────────────────────────────
+    // 単発SE
+    // ────────────────────────────────────────────
+    playOnce(bufKey, vol = 1, offset = 0) {
+        const n = this._makeNode(bufKey, false, 0, 0, vol);
+        if (!n) return;
+        n.src.start(0, offset);
+    }
+
+    // ────────────────────────────────────────────
+    // アパッチ個別管理
+    // ────────────────────────────────────────────
+    startApacheSound(uuid) {
+        if (!this.ready || this.apacheSources.has(uuid)) return;
+        // ファイル全体をループ（ループ点指定なし）
+        const n = this._startLoop('apacheMove', 0, 0, 0.55, 0);
+        if (n) this.apacheSources.set(uuid, n);
+    }
+
+    stopApacheSound(uuid) {
+        const n = this.apacheSources.get(uuid);
+        if (n) { this._stopNode(n, 0.4); this.apacheSources.delete(uuid); }
+    }
+
+    setApacheVolume(uuid, vol) {
+        const n = this.apacheSources.get(uuid);
+        if (n && this.ctx) n.gain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.05);
+    }
+}
+
+const soundManager = new SoundManager();
+
+// ── AudioContext はユーザー操作後に初期化（ブラウザの自動再生制限対策）──
+let _soundInitDone = false;
+async function _ensureSound() {
+    if (_soundInitDone) return;
+    _soundInitDone = true;
+    await soundManager.init();
+    // init完了後、AudioContextがsuspendedなら再開
+    if (soundManager.ctx && soundManager.ctx.state === 'suspended') {
+        soundManager.ctx.resume();
+    }
+}
+['keydown','pointerdown','touchstart'].forEach(ev =>
+    window.addEventListener(ev, ()=>{ if(isGameStarted) _ensureSound(); }, { passive: true })
+);
+
+// ======================================================
+// WORLD / CHUNK SYSTEM
+// ======================================================
+const CHUNK_SIZE = 64;
+const CHUNK_RENDER_DIST = 3;
+const BLOCK_SIZE = 8;
+const BLOCKS_PER_CHUNK = CHUNK_SIZE / BLOCK_SIZE;
+
+const BIOME = {
+    OCEAN:0,BEACH:1,GRASSLAND:2,FARMLAND:3,FOREST:4,
+    MOUNTAIN:5,SUBURB:6,URBAN:7,INDUSTRIAL:8,RIVER:9,MILITARY:10,
+};
+const BIOME_NAMES = {
+    0:'OCEAN',1:'BEACH',2:'GRASSLAND',3:'FARMLAND',
+    4:'FOREST',5:'MOUNTAIN',6:'SUBURB',7:'URBAN',8:'INDUSTRIAL',9:'RIVER',
+    10:'⚠ MILITARY ZONE ⚠'
+};
+
+function hash(n){n=Math.sin(n)*43758.5453123;return n-Math.floor(n);}
+function noise2D(x,y){
+    const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;
+    const ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy);
+    const a=hash(ix+iy*57),b=hash(ix+1+iy*57),c=hash(ix+(iy+1)*57),d=hash(ix+1+(iy+1)*57);
+    return a+(b-a)*ux+(c-a)*uy+(d-a)*ux*uy-0.5;
+}
+function fbm(x,y,oct=4){
+    let v=0,amp=0.5,freq=1,max=0;
+    for(let i=0;i<oct;i++){v+=noise2D(x*freq,y*freq)*amp;max+=amp;amp*=0.5;freq*=2;}
+    return v/max;
+}
+// 軍事ゾーンのホットスポット: 約6チャンクごとのグリッドに15%の確率で基地を配置
+function getMilitaryHotspot(wx,wz){
+    const gridSize=CHUNK_SIZE*6;
+    const gx=Math.floor(wx/gridSize);
+    const gz=Math.floor(wz/gridSize);
+    const h=hash(gx*91+gz*173+7777);
+    if(h>0.82){
+        return{active:true,cx:(gx+0.5)*gridSize,cz:(gz+0.5)*gridSize,radius:CHUNK_SIZE*2.2};
+    }
+    return{active:false};
+}
+function getBiome(wx,wz){
+    const mil=getMilitaryHotspot(wx,wz);
+    if(mil.active){
+        const d=Math.sqrt((wx-mil.cx)**2+(wz-mil.cz)**2);
+        if(d<mil.radius)return BIOME.MILITARY;
+    }
+    const scale=0.008;
+    const h=fbm(wx*scale,wz*scale)+0.5;
+    const moisture=fbm(wx*scale+100,wz*scale+200)+0.5;
+    const riverN=Math.abs(fbm(wx*0.005,wz*0.005+500));
+    if(riverN<0.07)return BIOME.RIVER;
+    if(h<0.28)return BIOME.OCEAN;
+    if(h<0.33)return BIOME.BEACH;
+    if(h>0.78)return BIOME.MOUNTAIN;
+    const cityN=fbm(wx*0.015+300,wz*0.015+300)+0.5;
+    if(cityN>0.72)return BIOME.URBAN;
+    if(cityN>0.60)return BIOME.INDUSTRIAL;
+    if(cityN>0.50)return BIOME.SUBURB;
+    if(moisture>0.55)return BIOME.FOREST;
+    if(moisture>0.40)return BIOME.GRASSLAND;
+    return BIOME.FARMLAND;
+}
+
+const BIOME_COLORS = {
+    [BIOME.OCEAN]:     [0x0a1e38,0x07142a],[BIOME.BEACH]:     [0x7a6535,0x6a5528],
+    [BIOME.GRASSLAND]: [0x162e0a,0x1c3e0c],[BIOME.FARMLAND]:  [0x4a3808,0x563e0e],
+    [BIOME.FOREST]:    [0x0a1e06,0x071504],[BIOME.MOUNTAIN]:  [0x3a3a3a,0x484848],
+    [BIOME.SUBURB]:    [0x1e1e16,0x181810],[BIOME.URBAN]:     [0x0e0e16,0x0a0a10],
+    [BIOME.INDUSTRIAL]:[0x121208,0x0e0e06],[BIOME.RIVER]:     [0x081828,0x05101a],
+    [BIOME.MILITARY]:  [0x9e8a5a,0x8a7648],
+};
+
+// ======================================================
+// THREE.JS SETUP
+// ======================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000814);
+scene.fog = new THREE.FogExp2(0x000814, 0.004);
+
+const renderer = new THREE.WebGLRenderer({antialias:true, logarithmicDepthBuffer:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.autoClear = false;
+renderer.shadowMap.enabled = false;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(55,window.innerWidth/window.innerHeight,2,600);
+camera.position.set(0,40,55);
+
+const ambient = new THREE.AmbientLight(0x223355, 0.85);
+scene.add(ambient);
+const moonLight = new THREE.DirectionalLight(0x6677aa,0.4);
+moonLight.position.set(-50,80,-30); moonLight.castShadow=false;
+scene.add(moonLight);
+const horizonLight = new THREE.DirectionalLight(0xff8833,0.08);
+horizonLight.position.set(100,5,100); scene.add(horizonLight);
+
+const starGeo=new THREE.BufferGeometry();
+const starPos=new Float32Array(3000*3);
+for(let i=0;i<3000;i++){starPos[i*3]=(Math.random()-0.5)*1600;starPos[i*3+1]=Math.random()*500+30;starPos[i*3+2]=(Math.random()-0.5)*1600;}
+starGeo.setAttribute('position',new THREE.BufferAttribute(starPos,3));
+scene.add(new THREE.Points(starGeo,new THREE.PointsMaterial({color:0xffffff,size:0.4,sizeAttenuation:true,transparent:true,opacity:0.85})));
+
+// ======================================================
+// CHUNK MANAGER
+// ======================================================
+const chunkCache = new Map();
+const activeChunks = new Set();
+const chunksInScene = new Set(); // scene.children.includes() の O(n) を回避
+const buildingColliders = new Map();
+let buildingCollisionCooldown = 0;
+
+const matCache = new Map();
+function getMat(color,roughness=0.9,metalness=0.0){
+    const key=`${color}_${roughness}_${metalness}`;
+    if(!matCache.has(key))matCache.set(key,new THREE.MeshStandardMaterial({color,roughness,metalness}));
+    return matCache.get(key);
+}
+
+const _sharedBlockGeo = new THREE.BoxGeometry(BLOCK_SIZE,BLOCK_SIZE,BLOCK_SIZE);
+const _sharedWaterGeo = new THREE.PlaneGeometry(BLOCK_SIZE,BLOCK_SIZE);
+const _sharedWaterMat = new THREE.MeshStandardMaterial({color:0x0e2e55,transparent:true,opacity:0.8,roughness:0.05,metalness:0.4});
+const _instDummy = new THREE.Object3D();
+
+const _treeTrunkGeo    = new THREE.CylinderGeometry(0.25,0.4,3,8);
+const _deciduousLeafGeos=[new THREE.ConeGeometry(2.8,4,8),new THREE.ConeGeometry(2.2,3.5,8),new THREE.ConeGeometry(1.4,3,8)];
+const _deciduousLeafYs =[3.5,5.5,7.5];
+const _pineLeafGeos    =[new THREE.ConeGeometry(2.2,3,8),new THREE.ConeGeometry(1.7,3.3,8),new THREE.ConeGeometry(1.2,3.6,8)];
+const _pineLeafYs      =[3,5,7];
+const _bushGeo         = new THREE.SphereGeometry(1,8,6);
+
+const _apacheHitColor  = new THREE.Color(0xff2200);
+const _apacheBaseColor = new THREE.Color(0x000000);
+
+function getChunkKey(cx,cz){return `${cx},${cz}`;}
+function worldToChunk(wx,wz){return{cx:Math.floor(wx/CHUNK_SIZE),cz:Math.floor(wz/CHUNK_SIZE)};}
+
+const _buildingTexCache = new Map();
+
+function makeBuildingTexture(rows, cols, seed) {
+    const cacheKey = `${rows}_${cols}_${seed}`;
+    if (_buildingTexCache.has(cacheKey)) return _buildingTexCache.get(cacheKey);
+
+    const TW = 128, TH = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = TW; canvas.height = TH;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, TW, TH);
+
+    const winColors = ['#ffee88','#fff0aa','#88ccff','#ffdd66','#ff9944','#ffffff'];
+    const cw = TW / cols, ch = TH / rows;
+
+    let r = seed | 0;
+    const rng = () => { r = (r * 9301 + 49297) % 233280; return r / 233280; };
+
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            if (rng() > 0.42) {
+                ctx.fillStyle = winColors[Math.floor(rng() * winColors.length)];
+                ctx.fillRect(col * cw + 2, row * ch + 2, cw - 4, ch - 4);
+            }
+        }
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    _buildingTexCache.set(cacheKey, tex);
+    return tex;
+}
+
+const roadMat = new THREE.MeshStandardMaterial({color:0x111115,roughness:0.95});
+const sidewalkMat = new THREE.MeshStandardMaterial({color:0x1a1a20,roughness:0.9});
+const laneMarkMat = new THREE.MeshBasicMaterial({color:0x555540});
+
+function addRoads(group,biome){
+    const roadW=biome===BIOME.URBAN?7:5;
+    const halfCS=CHUNK_SIZE/2;
+    const hRoad=new THREE.Mesh(new THREE.PlaneGeometry(CHUNK_SIZE+2,roadW),roadMat);
+    hRoad.rotation.x=-Math.PI/2; hRoad.position.set(halfCS,0.07,halfCS); group.add(hRoad);
+    const vRoad=new THREE.Mesh(new THREE.PlaneGeometry(roadW,CHUNK_SIZE+2),roadMat);
+    vRoad.rotation.x=-Math.PI/2; vRoad.position.set(halfCS,0.07,halfCS); group.add(vRoad);
+    [-1,1].forEach(s=>{
+        const sw=new THREE.Mesh(new THREE.PlaneGeometry(CHUNK_SIZE+2,1.5),sidewalkMat);
+        sw.rotation.x=-Math.PI/2; sw.position.set(halfCS,0.06,halfCS+s*(roadW/2+0.75)); group.add(sw);
+    });
+    const dashGeoH=new THREE.PlaneGeometry(4,0.25);
+    const dashInstH=new THREE.InstancedMesh(dashGeoH,laneMarkMat,8);
+    for(let i=0;i<8;i++){
+        _instDummy.position.set(i*8+4,0.08,halfCS);_instDummy.rotation.set(-Math.PI/2,0,0);_instDummy.scale.setScalar(1);_instDummy.updateMatrix();
+        dashInstH.setMatrixAt(i,_instDummy.matrix);
+    }
+    dashInstH.instanceMatrix.needsUpdate=true; group.add(dashInstH);
+    const dashGeoV=new THREE.PlaneGeometry(0.25,4);
+    const dashInstV=new THREE.InstancedMesh(dashGeoV,laneMarkMat,8);
+    for(let i=0;i<8;i++){
+        _instDummy.position.set(halfCS,0.08,i*8+4);_instDummy.rotation.set(-Math.PI/2,0,0);_instDummy.scale.setScalar(1);_instDummy.updateMatrix();
+        dashInstV.setMatrixAt(i,_instDummy.matrix);
+    }
+    dashInstV.instanceMatrix.needsUpdate=true; group.add(dashInstV);
+    const lampPostMat2=getMat(0x444450,0.6);
+    const lampGlowMat2=new THREE.MeshBasicMaterial({color:0xffeedd});
+    const lampPos=[halfCS*0.5,halfCS*1.5];
+    lampPos.forEach(lx=>{
+        [halfCS+roadW/2+1.8,halfCS-roadW/2-1.8].forEach(lz=>{
+            const post=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.18,5,6),lampPostMat2);
+            post.position.set(lx,2.5,lz); group.add(post);
+            const globe=new THREE.Mesh(new THREE.SphereGeometry(0.35,6,5),lampGlowMat2);
+            globe.position.set(lx,5.2,lz); group.add(globe);
+        });
+    });
+}
+
+function buildChunk(cx,cz){
+    const key=getChunkKey(cx,cz);
+    if(chunkCache.has(key))return chunkCache.get(key);
+
+    const group=new THREE.Group();
+    group.position.set(cx*CHUNK_SIZE,0,cz*CHUNK_SIZE);
+
+    const blockInstances=new Map();
+    const waterPositions=[];
+
+    for(let bx=0;bx<BLOCKS_PER_CHUNK;bx++){
+        for(let bz=0;bz<BLOCKS_PER_CHUNK;bz++){
+            const wx=cx*CHUNK_SIZE+bx*BLOCK_SIZE+BLOCK_SIZE/2;
+            const wz=cz*CHUNK_SIZE+bz*BLOCK_SIZE+BLOCK_SIZE/2;
+            const biome=getBiome(wx,wz);
+            const colors=BIOME_COLORS[biome];
+            const col=colors[(bx+bz)%2];
+            const h=biome===BIOME.MOUNTAIN?(fbm(wx*0.05,wz*0.05)+0.5)*12:biome===BIOME.OCEAN?-4:biome===BIOME.RIVER?-1:0;
+            if(!blockInstances.has(col))blockInstances.set(col,[]);
+            blockInstances.get(col).push({x:bx*BLOCK_SIZE+BLOCK_SIZE/2,y:h-BLOCK_SIZE/2,z:bz*BLOCK_SIZE+BLOCK_SIZE/2});
+            if(biome===BIOME.OCEAN||biome===BIOME.RIVER)
+                waterPositions.push({x:bx*BLOCK_SIZE+BLOCK_SIZE/2,z:bz*BLOCK_SIZE+BLOCK_SIZE/2});
+        }
+    }
+
+    for(const[col,positions]of blockInstances){
+        const inst=new THREE.InstancedMesh(_sharedBlockGeo,getMat(col),positions.length);
+        inst.receiveShadow=false;
+        positions.forEach((p,i)=>{
+            _instDummy.position.set(p.x,p.y,p.z);_instDummy.rotation.set(0,0,0);_instDummy.scale.setScalar(1);_instDummy.updateMatrix();
+            inst.setMatrixAt(i,_instDummy.matrix);
+        });
+        inst.instanceMatrix.needsUpdate=true; group.add(inst);
+    }
+
+    if(waterPositions.length>0){
+        const waterInst=new THREE.InstancedMesh(_sharedWaterGeo,_sharedWaterMat,waterPositions.length);
+        waterPositions.forEach((p,i)=>{
+            _instDummy.position.set(p.x,0.1,p.z);_instDummy.rotation.set(-Math.PI/2,0,0);_instDummy.scale.setScalar(1);_instDummy.updateMatrix();
+            waterInst.setMatrixAt(i,_instDummy.matrix);
+        });
+        waterInst.instanceMatrix.needsUpdate=true; group.add(waterInst);
+    }
+
+    const centerBiome=getBiome(cx*CHUNK_SIZE+CHUNK_SIZE/2,cz*CHUNK_SIZE+CHUNK_SIZE/2);
+    if(centerBiome===BIOME.URBAN||centerBiome===BIOME.SUBURB||centerBiome===BIOME.INDUSTRIAL)
+        addRoads(group,centerBiome);
+
+    spawnBiomeObjects(group,cx,cz);
+
+    if(centerBiome===BIOME.URBAN||centerBiome===BIOME.SUBURB){
+        const glowPlane=new THREE.Mesh(
+            new THREE.PlaneGeometry(CHUNK_SIZE*0.6,CHUNK_SIZE*0.6),
+            new THREE.MeshBasicMaterial({color:0x553311,transparent:true,opacity:0.08,depthWrite:false,side:THREE.DoubleSide})
+        );
+        glowPlane.rotation.x=-Math.PI/2;
+        glowPlane.position.set(CHUNK_SIZE/2,0.15,CHUNK_SIZE/2);
+        group.add(glowPlane);
+    }
+
+    scene.add(group);
+    chunksInScene.add(key);
+    chunkCache.set(key,group);
+
+    const colliders=[];
+    group.children.forEach(child=>{
+        if(child.userData&&child.userData.isBuilding){
+            colliders.push({
+                wx:cx*CHUNK_SIZE+child.position.x,
+                wz:cz*CHUNK_SIZE+child.position.z,
+                w:child.userData.bw,d:child.userData.bd,h:child.userData.bh,
+                mesh:child,parentGroup:group
+            });
+        }
+    });
+    if(colliders.length>0)buildingColliders.set(key,colliders);
+    return group;
+}
+
+function spawnBiomeObjects(group,cx,cz){
+    const rng=createRNG(cx*100+cz);
+    const biome=getBiome(cx*CHUNK_SIZE+CHUNK_SIZE/2,cz*CHUNK_SIZE+CHUNK_SIZE/2);
+
+    if(isFastMode){
+        if(biome===BIOME.URBAN){
+            const count=3+Math.floor(rng()*3);
+            for(let i=0;i<count;i++){
+                const lx=rng()*(CHUNK_SIZE-8)+4,lz=rng()*(CHUNK_SIZE-8)+4;
+                const h=20+rng()*60,w=8+rng()*14,d=8+rng()*14;
+                const colors=[0x1e2535,0x252535,0x181828,0x222230,0x1a2220];
+                const bldg=makeBuilding(w,d,h,colors[Math.floor(rng()*colors.length)],rng);
+                bldg.position.set(lx,0,lz);group.add(bldg);
+            }
+        }else if(biome===BIOME.SUBURB){
+            const count=2+Math.floor(rng()*3);
+            for(let i=0;i<count;i++){
+                const lx=rng()*(CHUNK_SIZE-8)+4,lz=rng()*(CHUNK_SIZE-8)+4;
+                const house=makeHouse(rng);
+                house.position.set(lx,0,lz);house.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(house);
+            }
+        }
+        return;
+    }
+
+    const spawnCount={
+        [BIOME.FOREST]:10,[BIOME.GRASSLAND]:5,[BIOME.FARMLAND]:4,[BIOME.MOUNTAIN]:4,
+        [BIOME.SUBURB]:6,[BIOME.URBAN]:7,[BIOME.INDUSTRIAL]:5,[BIOME.BEACH]:2,
+        [BIOME.OCEAN]:0,[BIOME.RIVER]:0,[BIOME.MILITARY]:8,
+    }[biome]||0;
+
+    const deciduousBatch=[],pineBatch=[],bushBatch=[];
+    for(let i=0;i<spawnCount;i++){
+        const lx=rng()*(CHUNK_SIZE-8)+4;
+        const lz=rng()*(CHUNK_SIZE-8)+4;
+        placeDecoration(group,biome,lx,lz,rng,deciduousBatch,pineBatch,bushBatch);
+    }
+    _batchTrees(group,deciduousBatch,'deciduous');
+    _batchTrees(group,pineBatch,'pine');
+    _batchBushes(group,bushBatch);
+}
+
+function _batchTrees(group,batch,type){
+    if(batch.length===0)return;
+    const leafGeos=type==='pine'?_pineLeafGeos:_deciduousLeafGeos;
+    const leafYs  =type==='pine'?_pineLeafYs:_deciduousLeafYs;
+    const leafMat =type==='pine'?getMat(0x0d4015,0.8):null;
+    const trunkInst=new THREE.InstancedMesh(_treeTrunkGeo,getMat(0x3d2b1a,0.9),batch.length);
+    batch.forEach((t,i)=>{
+        _instDummy.position.set(t.x,1.5*t.scale,t.z);_instDummy.rotation.set(0,t.rotY,0);_instDummy.scale.setScalar(t.scale);_instDummy.updateMatrix();
+        trunkInst.setMatrixAt(i,_instDummy.matrix);
+    });
+    trunkInst.instanceMatrix.needsUpdate=true; group.add(trunkInst);
+    const leafColors=[0x0d3d12,0x0a2e0d,0x144d18];
+    leafGeos.forEach((geo,li)=>{
+        const mat=type==='pine'?leafMat:getMat(leafColors[li],0.8);
+        const leafInst=new THREE.InstancedMesh(geo,mat,batch.length);
+        batch.forEach((t,i)=>{
+            _instDummy.position.set(t.x,leafYs[li]*t.scale,t.z);_instDummy.rotation.set(0,t.rotY,0);_instDummy.scale.setScalar(t.scale);_instDummy.updateMatrix();
+            leafInst.setMatrixAt(i,_instDummy.matrix);
+        });
+        leafInst.instanceMatrix.needsUpdate=true; group.add(leafInst);
+    });
+}
+
+function _batchBushes(group,batch){
+    if(batch.length===0)return;
+    const byColor=new Map();
+    batch.forEach(b=>{if(!byColor.has(b.col))byColor.set(b.col,[]);byColor.get(b.col).push(b);});
+    for(const[col,items]of byColor){
+        const inst=new THREE.InstancedMesh(_bushGeo,getMat(col,0.9),items.length);
+        items.forEach((b,i)=>{
+            _instDummy.position.set(b.x,b.scale,b.z);_instDummy.rotation.set(0,0,0);_instDummy.scale.setScalar(b.scale);_instDummy.updateMatrix();
+            inst.setMatrixAt(i,_instDummy.matrix);
+        });
+        inst.instanceMatrix.needsUpdate=true; group.add(inst);
+    }
+}
+
+function placeDecoration(group,biome,lx,lz,rng,deciduousBatch,pineBatch,bushBatch){
+    if(biome===BIOME.FOREST){
+        deciduousBatch.push({x:lx,z:lz,scale:0.7+rng()*0.8,rotY:rng()*Math.PI*2});
+    }else if(biome===BIOME.MOUNTAIN){
+        pineBatch.push({x:lx,z:lz,scale:0.7+rng()*0.8,rotY:rng()*Math.PI*2});
+    }else if(biome===BIOME.GRASSLAND){
+        if(rng()<0.6){deciduousBatch.push({x:lx,z:lz,scale:0.5+rng()*0.4,rotY:rng()*Math.PI*2});}
+        else{const s=0.4+rng()*0.5;const col=[0x0e3a08,0x123d0c,0x0a2e06][Math.floor(rng()*3)];bushBatch.push({x:lx,z:lz,scale:s,col});}
+    }else if(biome===BIOME.FARMLAND){
+        const t=Math.floor(rng()*4);
+        if(t===0){const f=makeFarmField();f.position.set(lx,0.1,lz);group.add(f);}
+        else if(t===1){const b=makeBarn();b.position.set(lx,0,lz);group.add(b);}
+        else if(t===2){const s=makeSilo();s.position.set(lx,0,lz);group.add(s);}
+        else{const wt=makeWaterTower();wt.position.set(lx,0,lz);group.add(wt);}
+    }else if(biome===BIOME.SUBURB){
+        const t=rng();
+        if(t<0.40){
+            const house=makeHouse(rng);house.position.set(lx,0,lz);house.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(house);
+            deciduousBatch.push({x:lx+4,z:lz+4,scale:0.6,rotY:rng()*Math.PI*2});
+        }else if(t<0.60){
+            const ap=makeMidRise(rng);ap.position.set(lx,0,lz);ap.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(ap);
+        }else if(t<0.75){
+            const ch=makeChurch(rng);ch.position.set(lx,0,lz);ch.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(ch);
+        }else if(t<0.88){
+            const gs=makeGasStation();gs.position.set(lx,0,lz);gs.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(gs);
+        }else{
+            const wt=makeWaterTower();wt.position.set(lx,0,lz);group.add(wt);
+        }
+    }else if(biome===BIOME.URBAN){
+        const h=20+rng()*60,w=8+rng()*14,d=8+rng()*14;
+        const colors=[0x1e2535,0x252535,0x181828,0x222230,0x1a2220];
+        const bldg=makeBuilding(w,d,h,colors[Math.floor(rng()*colors.length)],rng);
+        bldg.position.set(lx,0,lz);group.add(bldg);
+    }else if(biome===BIOME.INDUSTRIAL){
+        const t=Math.floor(rng()*6);
+        if(t===0){const f=makeFactory();f.position.set(lx,0,lz);group.add(f);}
+        else if(t===1){const wh=makeWarehouse();wh.position.set(lx,0,lz);group.add(wh);}
+        else if(t===2){const ch=makeChimney();ch.position.set(lx,0,lz);group.add(ch);}
+        else if(t===3){const wt=makeWaterTower();wt.position.set(lx,0,lz);group.add(wt);}
+        else if(t===4){const pp=makePowerPylon();pp.position.set(lx,0,lz);pp.rotation.y=rng()*Math.PI;group.add(pp);}
+        else{const ot=makeOilTank(rng);ot.position.set(lx,0,lz);group.add(ot);}
+    }else if(biome===BIOME.BEACH){
+        const palm=makePalmTree();palm.position.set(lx,0,lz);group.add(palm);
+    }else if(biome===BIOME.MILITARY){
+        const t=rng();
+        if(t<0.20){const b=makeBarracks();b.position.set(lx,0,lz);b.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(b);}
+        else if(t<0.35){const h=makeHangar();h.position.set(lx,0,lz);h.rotation.y=Math.floor(rng()*2)*Math.PI/2;group.add(h);}
+        else if(t<0.45){const r=makeRadarTower();r.position.set(lx,0,lz);group.add(r);}
+        else if(t<0.58){const w=makeWatchtower();w.position.set(lx,0,lz);group.add(w);}
+        else if(t<0.68){const run=makeMilitaryRunway();run.position.set(lx,0,lz);run.rotation.y=rng()<0.5?0:Math.PI/2;group.add(run);}
+        else if(t<0.78){const sb=makeSandbagWall(8+Math.floor(rng()*10));sb.position.set(lx,0,lz);sb.rotation.y=rng()*Math.PI;group.add(sb);}
+        else if(t<0.88){const f=makeMilitaryFence(12+Math.floor(rng()*8));f.position.set(lx,0,lz);f.rotation.y=rng()<0.5?0:Math.PI/2;group.add(f);}
+        else{const tent=makeMilitaryTent();tent.position.set(lx,0,lz);tent.rotation.y=rng()*Math.PI*2;group.add(tent);}
+    }
+}
+
+function createRNG(seed){
+    let s=seed;
+    return function(){s=(s*9301+49297)%233280;return s/233280;};
+}
+
+// ======================================================
+// 3D MODEL FACTORIES
+// ======================================================
+
+// ── 軍事基地施設 ──
+
+function makeBarracks(){
+    const g=new THREE.Group();
+    const wall=getMat(0x6b7c4a,0.9);
+    const roof=getMat(0x4a5530,0.85);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(18,4,7),wall);
+    body.position.y=2; g.add(body);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(18.5,0.6,7.5),roof);
+    top.position.y=4.3; g.add(top);
+    // ドア
+    const door=new THREE.Mesh(new THREE.BoxGeometry(1.4,2.4,0.1),getMat(0x2a2a1a,0.9));
+    door.position.set(0,1.2,3.55); g.add(door);
+    // 窓×4
+    for(let i=-1;i<=1;i+=2){
+        [-4,4].forEach(ox=>{
+            const win=new THREE.Mesh(new THREE.BoxGeometry(1.8,1.2,0.1),getMat(0x1a2a3a,0.1,0.6));
+            win.position.set(ox,2.5,i*3.55); g.add(win);
+        });
+    }
+    g.userData={isBuilding:true,bw:18,bd:7,bh:5};
+    return g;
+}
+
+function makeHangar(){
+    const g=new THREE.Group();
+    const wall=getMat(0x7a7060,0.85);
+    const roofMat=getMat(0x5a5448,0.8);
+    const base=new THREE.Mesh(new THREE.BoxGeometry(24,6,16),wall);
+    base.position.y=3; g.add(base);
+    // アーチ屋根（4段重ね）
+    for(let i=0;i<4;i++){
+        const r=new THREE.Mesh(new THREE.CylinderGeometry(8-i*0.8,8-i*0.8,24,12,1,false,0,Math.PI),roofMat);
+        r.rotation.z=Math.PI/2; r.position.y=6+i*0.4; g.add(r);
+    }
+    // 大型ドア
+    const door=new THREE.Mesh(new THREE.BoxGeometry(14,5.8,0.2),getMat(0x333325,0.9));
+    door.position.set(0,2.9,8.1); g.add(door);
+    // ドア枠
+    const frame=new THREE.Mesh(new THREE.BoxGeometry(14.6,6.2,0.15),getMat(0x55503a,0.85));
+    frame.position.set(0,3.1,8.0); g.add(frame);
+    g.userData={isBuilding:true,bw:24,bd:16,bh:12};
+    return g;
+}
+
+function makeRadarTower(){
+    const g=new THREE.Group();
+    const steel=getMat(0x4a4a40,0.7,0.5);
+    const dark=getMat(0x2a2a22,0.8);
+    // 脚部トラス
+    for(let i=0;i<4;i++){
+        const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.35,12,6),steel);
+        leg.position.set(Math.cos(i/4*Math.PI*2)*2.2,6,Math.sin(i/4*Math.PI*2)*2.2);
+        leg.rotation.z=Math.atan2(2.2,6)*0.8; g.add(leg);
+    }
+    const shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.5,14,8),steel);
+    shaft.position.y=7; g.add(shaft);
+    // レーダーディッシュ
+    const dish=new THREE.Mesh(new THREE.CylinderGeometry(0.1,3.5,1.2,12,1,false,0,Math.PI*2),getMat(0x556655,0.6,0.7));
+    dish.position.y=15; dish.rotation.x=Math.PI/4; g.add(dish);
+    const dishBack=new THREE.Mesh(new THREE.CylinderGeometry(3.5,3.5,0.3,12),dark);
+    dishBack.position.y=15.4; dishBack.rotation.x=Math.PI/4; g.add(dishBack);
+    const arm=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,1.5,6),steel);
+    arm.position.y=14.2; g.add(arm);
+    // 警告灯
+    const warn=new THREE.Mesh(new THREE.SphereGeometry(0.25,6,5),new THREE.MeshBasicMaterial({color:0xff3300}));
+    warn.position.y=16.5; g.add(warn);
+    g.userData={isBuilding:true,bw:5,bd:5,bh:17};
+    return g;
+}
+
+function makeWatchtower(){
+    const g=new THREE.Group();
+    const wood=getMat(0x5a4a2a,0.9);
+    const dark=getMat(0x3a3020,0.9);
+    // 4本脚
+    for(let i=0;i<4;i++){
+        const leg=new THREE.Mesh(new THREE.BoxGeometry(0.5,12,0.5),wood);
+        leg.position.set((i%2===0?-2.5:2.5),6,(i<2?-2.5:2.5)); g.add(leg);
+    }
+    // プラットフォーム
+    const platform=new THREE.Mesh(new THREE.BoxGeometry(7,0.5,7),wood);
+    platform.position.y=12; g.add(platform);
+    // 壁
+    for(let i=0;i<4;i++){
+        const wall=new THREE.Mesh(new THREE.BoxGeometry(i%2===0?7:0.4,2,i%2===0?0.4:7),dark);
+        wall.position.set(i%2===0?0:(i<2?-3.3:3.3),13.2,i%2===0?(i<2?-3.3:3.3):0);
+        g.add(wall);
+    }
+    // 屋根
+    const roof=new THREE.Mesh(new THREE.BoxGeometry(7.8,0.4,7.8),dark);
+    roof.position.y=14.5; g.add(roof);
+    // サーチライト
+    const light=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.8,1.0,8),getMat(0x888880,0.5,0.8));
+    light.position.set(1.5,14,1.5); light.rotation.x=0.4; g.add(light);
+    const lens=new THREE.Mesh(new THREE.CircleGeometry(0.5,8),new THREE.MeshBasicMaterial({color:0xffffaa}));
+    lens.position.set(1.5,14.5,1.9); g.add(lens);
+    g.userData={isBuilding:true,bw:7,bd:7,bh:15};
+    return g;
+}
+
+function makeMilitaryRunway(){
+    const g=new THREE.Group();
+    const asphalt=new THREE.Mesh(new THREE.PlaneGeometry(10,36),getMat(0x1a1a18,0.95));
+    asphalt.rotation.x=-Math.PI/2; asphalt.position.y=0.05; g.add(asphalt);
+    // センターライン
+    for(let i=-3;i<=3;i++){
+        const mark=new THREE.Mesh(new THREE.PlaneGeometry(0.5,3),new THREE.MeshBasicMaterial({color:0xcccc88}));
+        mark.rotation.x=-Math.PI/2; mark.position.set(0,0.06,i*5); g.add(mark);
+    }
+    // 端のしきり線
+    [-4.5,4.5].forEach(x=>{
+        const edge=new THREE.Mesh(new THREE.PlaneGeometry(0.3,36),new THREE.MeshBasicMaterial({color:0xffffff}));
+        edge.rotation.x=-Math.PI/2; edge.position.set(x,0.06,0); g.add(edge);
+    });
+    return g;
+}
+
+function makeSandbagWall(length=12){
+    const g=new THREE.Group();
+    const mat=getMat(0x8b7a50,0.95);
+    const count=Math.floor(length/1.6);
+    for(let i=0;i<count;i++){
+        const bag=new THREE.Mesh(new THREE.SphereGeometry(0.75,6,4),mat);
+        bag.scale.set(1,0.65,0.75);
+        bag.position.set(i*1.55-length/2+0.75,0.5,0); g.add(bag);
+        if(i%2===0){
+            const bag2=new THREE.Mesh(new THREE.SphereGeometry(0.7,6,4),mat);
+            bag2.scale.set(1,0.6,0.7);
+            bag2.position.set(i*1.55-length/2+1.5,1.3,0); g.add(bag2);
+        }
+    }
+    return g;
+}
+
+function makeMilitaryFence(length=16){
+    const g=new THREE.Group();
+    const post=getMat(0x555545,0.8,0.3);
+    const wire=getMat(0x444433,0.7,0.4);
+    const pCount=Math.ceil(length/4)+1;
+    for(let i=0;i<pCount;i++){
+        const p=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.12,3.5,6),post);
+        p.position.set(i*4-length/2,1.75,0); g.add(p);
+        // 有刺鉄線の代わりの横棒
+        if(i<pCount-1){
+            [1.2,2.2,3.1].forEach(wy=>{
+                const w=new THREE.Mesh(new THREE.BoxGeometry(4,0.06,0.06),wire);
+                w.position.set(i*4-length/2+2,wy,0); g.add(w);
+            });
+        }
+    }
+    // 上部の警告灯（両端）
+    const warnMat=new THREE.MeshBasicMaterial({color:0xff4400});
+    [0,1].forEach(i=>{
+        const warn=new THREE.Mesh(new THREE.SphereGeometry(0.18,6,4),warnMat);
+        warn.position.set(i===0?-length/2:length/2,3.8,0); g.add(warn);
+    });
+    return g;
+}
+
+function makeMilitaryTent(){
+    const g=new THREE.Group();
+    const canvas=getMat(0x5a6340,0.95);
+    const dark=getMat(0x3a4028,0.9);
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(0.2,5,6,3),canvas);
+    body.position.y=3; body.rotation.y=Math.PI/6; g.add(body);
+    const floor=new THREE.Mesh(new THREE.CylinderGeometry(4.8,4.8,0.2,3),dark);
+    floor.position.y=0.1; floor.rotation.y=Math.PI/6; g.add(floor);
+    return g;
+}
+
+function makePalmTree(){
+    const g=new THREE.Group();
+    const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.35,6,8),getMat(0x8b6914,0.9));
+    trunk.position.y=3;trunk.rotation.z=0.1;g.add(trunk);
+    for(let i=0;i<6;i++){
+        const leaf=new THREE.Mesh(new THREE.ConeGeometry(0.15,3.5,5),getMat(0x1a5e0a,0.8));
+        leaf.position.set(Math.cos(i/6*Math.PI*2)*1.5,6.5,Math.sin(i/6*Math.PI*2)*1.5);
+        leaf.rotation.z=0.8;leaf.rotation.y=i/6*Math.PI*2;g.add(leaf);
+    }
+    return g;
+}
+
+function makeBuilding(w,d,h,color,rng){
+    // rng が渡されない場合は Math.random をフォールバックとして使う
+    const _rng = rng || Math.random.bind(Math);
+    const g=new THREE.Group();
+    const rows=Math.max(2,Math.floor(h/4));
+    const cols=Math.max(2,Math.floor(w/3));
+    const seed=Math.floor(w*31+h*17+d*7);
+
+    const winTex=makeBuildingTexture(rows,cols,seed);
+
+    const bodyMtl=new THREE.MeshLambertMaterial({
+        color,
+        emissive:new THREE.Color(color).multiplyScalar(0.4),
+    });
+
+    const faceMtl=new THREE.MeshLambertMaterial({
+        color,
+        emissive:new THREE.Color(0xffffff),
+        emissiveIntensity:0.6,
+        emissiveMap:winTex,
+    });
+
+    const materials=[bodyMtl,bodyMtl,bodyMtl,bodyMtl,faceMtl,faceMtl];
+    const body=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),materials);
+    body.position.y=h/2;
+    body.castShadow=false; body.receiveShadow=false;
+    g.add(body);
+
+    const neonColors=[0xff2266,0x00ffcc,0xff8800,0x44aaff,0xff44ff,0x00ff88];
+    const nc=neonColors[Math.floor(_rng()*neonColors.length)]; // ← シードRNG使用
+    const neonBar=new THREE.Mesh(
+        new THREE.BoxGeometry(w*0.65,0.55,0.25),
+        new THREE.MeshBasicMaterial({color:nc})
+    );
+    neonBar.position.set(0,h+0.5,d/2+0.15);
+    g.add(neonBar);
+
+    g.userData.isBuilding=true;
+    g.userData.bw=w; g.userData.bd=d; g.userData.bh=h;
+    return g;
+}
+
+function makeHouse(rng){
+    const g=new THREE.Group();
+    const wallColors=[0xd4b483,0xc8a0a0,0xa0b4c8,0xb0c8a0];
+    const roofColors=[0x8b2222,0x664422,0x446688];
+    const wc=wallColors[Math.floor(rng()*wallColors.length)];
+    const rc=roofColors[Math.floor(rng()*roofColors.length)];
+    const base=new THREE.Mesh(new THREE.BoxGeometry(7,3.5,6),getMat(wc,0.9));
+    base.position.y=1.75;g.add(base);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(5.2,2.5,4),getMat(rc,0.85));
+    roof.position.y=4.75;roof.rotation.y=Math.PI/4;g.add(roof);
+    const door=new THREE.Mesh(new THREE.PlaneGeometry(0.9,1.6),new THREE.MeshBasicMaterial({color:0x5a3010}));
+    door.position.set(0,0.8,3.01);g.add(door);
+    [[-2,1.8],[2,1.8]].forEach(([dx,dy])=>{
+        const win=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.9),new THREE.MeshBasicMaterial({color:0x88ccff}));
+        win.position.set(dx,dy,3.01);g.add(win);
+    });
+    g.userData.isBuilding=true;g.userData.bw=7;g.userData.bd=6;g.userData.bh=6;
+    return g;
+}
+
+function makeBarn(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.BoxGeometry(10,5,7),getMat(0x882222,0.9));
+    body.position.y=2.5;g.add(body);
+    const roof=new THREE.Mesh(new THREE.CylinderGeometry(0.1,5.8,3,4),getMat(0x662222,0.9));
+    roof.position.y=6.5;roof.rotation.y=Math.PI/4;g.add(roof);
+    g.userData.isBuilding=true;g.userData.bw=10;g.userData.bd=7;g.userData.bh=8;
+    return g;
+}
+function makeSilo(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(1.8,1.8,8,12),getMat(0xc8c8b0,0.85));
+    body.position.y=4;g.add(body);
+    const top=new THREE.Mesh(new THREE.ConeGeometry(2,2,12),getMat(0x888880,0.9));
+    top.position.y=9;g.add(top);
+    g.userData.isBuilding=true;g.userData.bw=4;g.userData.bd=4;g.userData.bh=11;
+    return g;
+}
+function makeFarmField(){
+    const g=new THREE.Group();
+    const colors=[0x2a8a10,0xd4a030,0x1a6010];
+    for(let r=0;r<4;r++)for(let c=0;c<4;c++){
+        const row=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.8,5),getMat(colors[(r+c)%3],0.95));
+        row.position.set(r*2-3,0.4,0);g.add(row);
+    }
+    return g;
+}
+function makeFactory(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.BoxGeometry(14,6,10),getMat(0x353325,0.85));
+    body.position.y=3;g.add(body);
+    [3,-3].forEach(ox=>{
+        const ch=new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.8,8,10),getMat(0x252215,0.9));
+        ch.position.set(ox,10,-3);g.add(ch);
+    });
+    g.userData.isBuilding=true;g.userData.bw=14;g.userData.bd=10;g.userData.bh=14;
+    return g;
+}
+function makeWarehouse(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.BoxGeometry(18,5,10),getMat(0x3a3830,0.9));
+    body.position.y=2.5;g.add(body);
+    const roof=new THREE.Mesh(new THREE.CylinderGeometry(0.1,9.5,2,4),getMat(0x454540,0.9));
+    roof.position.y=6;roof.rotation.y=Math.PI/4;g.add(roof);
+    g.userData.isBuilding=true;g.userData.bw=18;g.userData.bd=10;g.userData.bh=7;
+    return g;
+}
+function makeChimney(){
+    const g=new THREE.Group();
+    const base=new THREE.Mesh(new THREE.CylinderGeometry(1.5,2,15,12),getMat(0x2e2c20,0.9));
+    base.position.y=7.5;g.add(base);
+    const top=new THREE.Mesh(new THREE.CylinderGeometry(1.8,1.5,1.5,12),getMat(0x222015,0.9));
+    top.position.y=15.75;g.add(top);
+    g.userData.isBuilding=true;g.userData.bw=4;g.userData.bd=4;g.userData.bh=17;
+    return g;
+}
+// ── 教会 ────────────────────────────────────────────────
+function makeChurch(rng){
+    const g=new THREE.Group();
+    const wc=getMat(0xd8d0c0,0.9),rc=getMat(0x8b4422,0.85),sc=getMat(0xc8c0b0,0.9);
+    const nave=new THREE.Mesh(new THREE.BoxGeometry(8,5,14),wc);nave.position.y=2.5;g.add(nave);
+    const transept=new THREE.Mesh(new THREE.BoxGeometry(14,4,6),wc);transept.position.set(0,2,0);g.add(transept);
+    const stBase=new THREE.Mesh(new THREE.BoxGeometry(3.5,7,3.5),sc);stBase.position.set(0,5.5,-4.5);g.add(stBase);
+    const spire=new THREE.Mesh(new THREE.ConeGeometry(2.4,9,4),rc);spire.position.set(0,13.5,-4.5);spire.rotation.y=Math.PI/4;g.add(spire);
+    const cross1=new THREE.Mesh(new THREE.BoxGeometry(0.3,2.5,0.3),getMat(0xdddddd,0.7));cross1.position.set(0,18.5,-4.5);g.add(cross1);
+    const cross2=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.3,0.3),getMat(0xdddddd,0.7));cross2.position.set(0,18,-4.5);g.add(cross2);
+    const roofN=new THREE.Mesh(new THREE.CylinderGeometry(0.1,4.5,2,4),rc);roofN.position.set(0,5.2,0);roofN.rotation.y=Math.PI/4;g.add(roofN);
+    g.userData.isBuilding=true;g.userData.bw=14;g.userData.bd=14;g.userData.bh=19;
+    return g;
+}
+// ── ガソリンスタンド ──────────────────────────────────
+function makeGasStation(){
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.BoxGeometry(8,4,6),getMat(0xe8e0d0,0.85));body.position.y=2;g.add(body);
+    const canopy=new THREE.Mesh(new THREE.BoxGeometry(18,0.45,11),getMat(0xcc3322,0.8));canopy.position.set(3,5.2,0);g.add(canopy);
+    [0,8].forEach(ox=>{const col=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,5.2,6),getMat(0xaaaaaa,0.8));col.position.set(ox,2.6,0);g.add(col);});
+    [-3.5,3.5].forEach(oz=>{
+        const pump=new THREE.Mesh(new THREE.BoxGeometry(0.9,1.8,0.55),getMat(0x228844,0.8));pump.position.set(6,0.9,oz);g.add(pump);
+        const scr=new THREE.Mesh(new THREE.PlaneGeometry(0.55,0.55),new THREE.MeshBasicMaterial({color:0x00ccff}));scr.position.set(6.46,1.3,oz);g.add(scr);
+    });
+    const sign=new THREE.Mesh(new THREE.BoxGeometry(3,2,0.2),getMat(0xff4400,0.7));sign.position.set(-1,6,0);g.add(sign);
+    g.userData.isBuilding=true;g.userData.bw=18;g.userData.bd=11;g.userData.bh=6;
+    return g;
+}
+// ── 給水塔 ────────────────────────────────────────────
+function makeWaterTower(){
+    const g=new THREE.Group();const lm=getMat(0x555548,0.9);
+    const LG=new THREE.CylinderGeometry(0.18,0.22,10,6);
+    for(let i=0;i<6;i++){const a=(i/6)*Math.PI*2;const leg=new THREE.Mesh(LG,lm);leg.position.set(Math.cos(a)*2.6,5,Math.sin(a)*2.6);g.add(leg);}
+    const brace=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.1,6,12),lm);brace.rotation.x=Math.PI/2;brace.position.y=3;g.add(brace);
+    const tank=new THREE.Mesh(new THREE.CylinderGeometry(2.9,2.9,5,14),getMat(0x7a8a70,0.85));tank.position.y=12;g.add(tank);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(3.3,2.2,14),getMat(0x556655,0.9));roof.position.y=15.6;g.add(roof);
+    const pipe=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,10,6),lm);pipe.position.set(0,5,0);g.add(pipe);
+    g.userData.isBuilding=true;g.userData.bw=6;g.userData.bd=6;g.userData.bh=17;
+    return g;
+}
+// ── 送電鉄塔 ──────────────────────────────────────────
+function makePowerPylon(){
+    const g=new THREE.Group();const m=getMat(0x999988,0.7);
+    const mast=new THREE.Mesh(new THREE.BoxGeometry(0.9,20,0.9),m);mast.position.y=10;g.add(mast);
+    [6,11,16].forEach(y=>{
+        const arm=new THREE.Mesh(new THREE.BoxGeometry(12,0.45,0.45),m);arm.position.y=y;g.add(arm);
+        [-5.5,5.5].forEach(ox=>{const ins=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,1,5),getMat(0x333333,0.6));ins.position.set(ox,y-0.7,0);g.add(ins);});
+    });
+    g.userData.isBuilding=true;g.userData.bw=12;g.userData.bd=2;g.userData.bh=20;
+    return g;
+}
+// ── 中層アパート ──────────────────────────────────────
+function makeMidRise(rng){
+    const g=new THREE.Group();
+    const floors=4+Math.floor(rng()*4),h=floors*3.2;
+    const w=10+rng()*6,d=8+rng()*4;
+    const cols=[0xc8b89a,0xb0a898,0xd0c8b0,0xa8b8c0,0xc0b0a0];
+    const body=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),getMat(cols[Math.floor(rng()*cols.length)],0.9));body.position.y=h/2;g.add(body);
+    const parapet=new THREE.Mesh(new THREE.BoxGeometry(w+0.5,0.55,d+0.5),getMat(0x888888,0.85));parapet.position.y=h+0.27;g.add(parapet);
+    const ac=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.7,0.8),getMat(0x999999,0.8));ac.position.set(w*0.3,h+0.6,d*0.3);g.add(ac);
+    for(let f=1;f<floors;f+=2){const bal=new THREE.Mesh(new THREE.BoxGeometry(w+1.8,0.25,1.2),getMat(0x999999,0.8));bal.position.set(0,f*3.2-0.1,d/2+0.6);g.add(bal);}
+    g.userData.isBuilding=true;g.userData.bw=w;g.userData.bd=d;g.userData.bh=h;
+    return g;
+}
+// ── オイルタンク ──────────────────────────────────────
+function makeOilTank(rng){
+    const g=new THREE.Group();
+    const r=3+rng()*2,h=4+rng()*3;
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,14),getMat(0x554433,0.85));body.position.y=h/2;g.add(body);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(r+0.1,1.5,14),getMat(0x443322,0.9));roof.position.y=h+0.75;g.add(roof);
+    const band=new THREE.Mesh(new THREE.TorusGeometry(r+0.05,0.12,6,14),getMat(0x666655,0.8));band.rotation.x=Math.PI/2;band.position.y=h*0.5;g.add(band);
+    const ladder=new THREE.Mesh(new THREE.BoxGeometry(0.15,h,0.1),getMat(0x888877,0.7));ladder.position.set(r,h/2,0);g.add(ladder);
+    g.userData.isBuilding=true;g.userData.bw=r*2+0.5;g.userData.bd=r*2+0.5;g.userData.bh=h+2;
+    return g;
+}
+
+// ======================================================
+// UFO
+// ======================================================
+const ufo=new THREE.Group();
+const bodyMat=new THREE.MeshStandardMaterial({color:0xaabbcc,metalness:0.8,roughness:0.15,emissive:0x112233,emissiveIntensity:0.6});
+const ufoBody=new THREE.Mesh(new THREE.CylinderGeometry(4.5,6.5,1.8,32),bodyMat);
+ufoBody.castShadow=false; ufo.add(ufoBody);
+const ringMat=new THREE.MeshStandardMaterial({color:0x88ffee,metalness:0.9,roughness:0.05,emissive:0x00ffcc,emissiveIntensity:1.5});
+const ufoRing=new THREE.Mesh(new THREE.TorusGeometry(5.5,0.45,10,48),ringMat);
+ufoRing.position.y=-0.3; ufo.add(ufoRing);
+const domeMat=new THREE.MeshStandardMaterial({color:0x88eeff,transparent:true,opacity:0.55,metalness:0.1,roughness:0.0,emissive:0x44aaff,emissiveIntensity:1.2});
+const ufoDome=new THREE.Mesh(new THREE.SphereGeometry(2.5,24,16,0,Math.PI*2,0,Math.PI/2),domeMat);
+ufoDome.position.y=0.9; ufo.add(ufoDome);
+const pilot=new THREE.Mesh(new THREE.SphereGeometry(0.7,12,12),new THREE.MeshStandardMaterial({color:0x88ffaa,emissive:0x44ff88,emissiveIntensity:1.5}));
+pilot.position.y=1.5; ufo.add(pilot);
+const ufoBottom=new THREE.Mesh(new THREE.CylinderGeometry(3.5,5.5,0.6,32),new THREE.MeshStandardMaterial({color:0x334455,metalness:0.6,roughness:0.3,emissive:0x003322,emissiveIntensity:0.8}));
+ufoBottom.position.y=-1.0; ufo.add(ufoBottom);
+const ledRing=new THREE.Group();
+for(let i=0;i<24;i++){
+    const hue=i/24;
+    const led=new THREE.Mesh(new THREE.SphereGeometry(0.32,8,8),new THREE.MeshBasicMaterial({color:new THREE.Color().setHSL(hue,1.0,0.75)}));
+    const angle=(i/24)*Math.PI*2;
+    led.position.set(Math.cos(angle)*5.6,-0.35,Math.sin(angle)*5.6);
+    ledRing.add(led);
+}
+ufo.add(ledRing);
+const antenna=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.12,2.5,8),new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.9,emissive:0x222222,emissiveIntensity:0.3}));
+antenna.position.y=3.5; ufo.add(antenna);
+const antennaTop=new THREE.Mesh(new THREE.SphereGeometry(0.28,8,8),new THREE.MeshBasicMaterial({color:0xff4444}));
+antennaTop.position.y=4.8; ufo.add(antennaTop);
+const glowDiscMat=new THREE.MeshBasicMaterial({color:0x00ffcc,transparent:true,opacity:0.12,side:THREE.DoubleSide,depthWrite:false});
+const glowDisc=new THREE.Mesh(new THREE.CircleGeometry(7,48),glowDiscMat);
+glowDisc.rotation.x=Math.PI/2; glowDisc.position.y=-1.3; ufo.add(glowDisc);
+ufo.position.set(0,55,0);
+scene.add(ufo);
+
+// Blob shadow
+const blobShadowMat=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide});
+const blobShadow=new THREE.Mesh(new THREE.CircleGeometry(7,32),blobShadowMat);
+blobShadow.rotation.x=-Math.PI/2; blobShadow.position.y=0.2; scene.add(blobShadow);
+const groundRingMat=new THREE.MeshBasicMaterial({color:0x00ff88,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide});
+const groundRing=new THREE.Mesh(new THREE.RingGeometry(5.5,7.5,36),groundRingMat);
+groundRing.rotation.x=-Math.PI/2; groundRing.position.y=0.22; scene.add(groundRing);
+
+const spotLight=new THREE.SpotLight(0x88ffcc,2.0,250,Math.PI/6,0.4,0);
+scene.add(spotLight); spotLight.castShadow=false;
+const lightTarget=new THREE.Object3D(); scene.add(lightTarget);
+spotLight.target=lightTarget;
+
+const ufoPointLight=new THREE.PointLight(0x00ffcc,2.5,70);
+scene.add(ufoPointLight);
+const ufoGroundLight=new THREE.PointLight(0x33ffaa,1.5,120);
+scene.add(ufoGroundLight);
+
+// ======================================================
+// ABDUCT BEAM
+// ======================================================
+const beamOuter=new THREE.Mesh(new THREE.CylinderGeometry(4.5,4.5,55,32,1,true),new THREE.MeshBasicMaterial({color:0x00cc33,transparent:true,opacity:0.04,side:THREE.DoubleSide,depthWrite:false}));
+const beamMid=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,55,24,1,true),new THREE.MeshBasicMaterial({color:0x22ff55,transparent:true,opacity:0.09,side:THREE.DoubleSide,depthWrite:false}));
+const beamInner=new THREE.Mesh(new THREE.CylinderGeometry(0.9,0.9,55,16,1,true),new THREE.MeshBasicMaterial({color:0x88ffaa,transparent:true,opacity:0.20,side:THREE.DoubleSide,depthWrite:false}));
+const beamCore=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,55,10,1,true),new THREE.MeshBasicMaterial({color:0xccffcc,transparent:true,opacity:0.32,side:THREE.DoubleSide,depthWrite:false}));
+const beamGlowMat=new THREE.MeshBasicMaterial({color:0x00ff55,transparent:true,opacity:0.20,side:THREE.DoubleSide,depthWrite:false});
+const beamGlow=new THREE.Mesh(new THREE.CircleGeometry(6,48),beamGlowMat);
+beamGlow.rotation.x=-Math.PI/2; beamGlow.position.y=-27.4;
+const beamLight1=new THREE.PointLight(0x00ff44,0,30);
+const beamLight2=new THREE.PointLight(0x44ff88,0,25);
+const beamLight3=new THREE.PointLight(0x66ffaa,0,40);
+beamLight1.position.y=15; beamLight2.position.y=0; beamLight3.position.y=-25;
+const beamGroup=new THREE.Group();
+beamGroup.add(beamOuter,beamMid,beamInner,beamCore,beamGlow,beamLight1,beamLight2,beamLight3);
+scene.add(beamGroup);
+
+// ======================================================
+// ATTACK BEAM
+// ======================================================
+const attackBeamLen=200;
+const atkBeamMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.25,attackBeamLen,10,1,false),new THREE.MeshBasicMaterial({color:0xff2200,transparent:true,opacity:0.85,depthWrite:false}));
+const atkBeamGlow=new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.7,attackBeamLen,10,1,true),new THREE.MeshBasicMaterial({color:0xff6600,transparent:true,opacity:0.25,side:THREE.DoubleSide,depthWrite:false}));
+const attackBeamGroup=new THREE.Group();
+attackBeamGroup.add(atkBeamMesh,atkBeamGlow);
+attackBeamGroup.visible=false;
+scene.add(attackBeamGroup);
+
+let attackBeamTimer=0,attackCooldown=0;
+const _atkDir=new THREE.Vector3(),_atkMid=new THREE.Vector3(),_yAxis=new THREE.Vector3(0,1,0);
+
+function fireAttackBeam(){
+    if(attackCooldown>0)return;
+    attackCooldown=0.8; attackBeamTimer=0.3;
+    soundManager.playOnce('attackBeam', 0.85);
+    let nearest=null,nearestDist=Infinity;
+    apaches.forEach(ap=>{
+        const d=ufo.position.distanceTo(ap.mesh.position);
+        if(d<nearestDist){nearestDist=d;nearest=ap;}
+    });
+    let targetPos;
+    if(nearest&&nearestDist<300){
+        targetPos=nearest.mesh.position.clone();
+        nearest.hp-=1;
+        if(nearest.hp<=0){
+            soundManager.stopApacheSound(nearest.mesh.uuid);
+            soundManager.playOnce('apacheExplosion', 1.0);
+            createExplosion(nearest.mesh.position.clone(),nearest.type==='fighter'?2.2:1.5);
+            scene.remove(nearest.mesh);
+            apaches.splice(apaches.indexOf(nearest),1);
+            const pts=nearest.type==='fighter'?8000:nearest.type==='taikuho'?3000:5000;
+            const label=nearest.type==='fighter'?'F-22 DOWN!':nearest.type==='taikuho'?'ANTI-AIR GUN DOWN!':'HELICOPTER DOWN!';
+            score+=pts;document.getElementById('score').textContent=score;
+            showNotif(`${label} +${pts}`);
+        }else{nearest.flashTimer=0.2;}
+    }else{
+        targetPos=new THREE.Vector3(ufo.position.x,0,ufo.position.z-60);
+        const BEAM_DESTROY_RADIUS=22;
+        let buildingHit=false;
+        for(const[chunkKey,colliders]of buildingColliders){
+            for(let bi=colliders.length-1;bi>=0;bi--){
+                const c=colliders[bi];
+                const bdx=c.wx-targetPos.x,bdz=c.wz-targetPos.z;
+                if(Math.sqrt(bdx*bdx+bdz*bdz)<BEAM_DESTROY_RADIUS){
+                    buildingHit=true;
+                    const bScale=1.2+c.h/30;
+                    const explosionCount=3+Math.floor(Math.random()*3);
+                    for(let ei=0;ei<explosionCount;ei++){
+                        setTimeout(()=>{createExplosion(new THREE.Vector3(c.wx+(Math.random()-0.5)*c.w,c.h*(ei/explosionCount)*0.9+1,c.wz+(Math.random()-0.5)*c.d),bScale);},ei*110);
+                    }
+                    if(c.mesh&&c.parentGroup){setTimeout(()=>{if(c.parentGroup)c.parentGroup.remove(c.mesh);},300);}
+                    colliders.splice(bi,1);
+                }
+            }
+        }
+        if(buildingHit){
+            soundManager.playOnce('buildingExplosion', 1.0);
+            score+=500;document.getElementById('score').textContent=score;showNotif('STRUCTURE DESTROYED! +500');
+        }else{
+            soundManager.playOnce('groundExplosion', 0.85);
+            createExplosion(targetPos.clone(),0.8);
+        }
+    }
+    _atkDir.subVectors(targetPos,ufo.position);
+    const len=_atkDir.length();_atkDir.normalize();
+    _atkMid.copy(ufo.position).addScaledVector(_atkDir,len/2);
+    attackBeamGroup.position.copy(_atkMid);
+    attackBeamGroup.scale.y=len/attackBeamLen;
+    attackBeamGroup.quaternion.setFromUnitVectors(_yAxis,_atkDir);
+    attackBeamGroup.visible=true;
+}
+
+// ======================================================
+// 敵ユニット システム（ヘリ / 戦闘機 / 対空砲）
+// ======================================================
+const apaches=[];
+let apacheSpawnTimer=0;
+const APACHE_SPAWN_INTERVAL=60;
+let ufoHP=100,apacheWarningTimer=0;
+const APACHE_MAX_DIST=450;
+
+// ── GLBモデルキャッシュ ──
+const _glbCache={helicopter:null,fighter:null,taikuho:null};
+
+function _colorizeGLB(scene3d, type){
+    let idx=0;
+    scene3d.traverse(child=>{
+        if(!child.isMesh) return;
+        let col, metal, rough, emissCol;
+        if(type==='helicopter'){
+            // 陸軍グリーン系
+            const palette=[0x3a5420,0x2d4a18,0x465e28,0x1e3010,0x304018];
+            col=palette[idx%palette.length];
+            metal=0.25; rough=0.82;
+            emissCol=new THREE.Color(col).multiplyScalar(0.18);
+        } else if(type==='fighter'){
+            // ステルスグレー / ダークブルーグレー
+            const palette=[0x2a3040,0x222838,0x303848,0x1a2030,0x3a4050];
+            col=palette[idx%palette.length];
+            metal=0.72; rough=0.28;
+            emissCol=new THREE.Color(0x050810);
+        } else {
+            // 対空砲: 砂漠カーキ / スチールグレー
+            const palette=[0x5a5a28,0x6a6030,0x484818,0x303020,0x7a7040];
+            col=palette[idx%palette.length];
+            metal=0.55; rough=0.68;
+            emissCol=new THREE.Color(0x080806);
+        }
+        const mat=new THREE.MeshStandardMaterial({
+            color:col, metalness:metal, roughness:rough,
+            emissive:emissCol, emissiveIntensity:1.0
+        });
+        child.material=mat;
+        idx++;
+    });
+}
+
+// 起動時にGLBをプリロード
+(function loadEnemyGLBs(){
+    const loader=new THREE.GLTFLoader();
+    loader.load('Helicopter.glb', gltf=>{
+        _colorizeGLB(gltf.scene,'helicopter');
+        // ヘリコプターのサイズをスケーリング
+        gltf.scene.scale.setScalar(0.18); // ヘリコプター
+        _glbCache.helicopter=gltf.scene;
+    }, undefined, err=>console.warn('[GLB] Helicopter load error:',err));
+
+    loader.load('F22_shape_only_decimated.glb', gltf=>{
+        _colorizeGLB(gltf.scene,'fighter');
+        gltf.scene.scale.setScalar(0.25); // 戦闘機
+        _glbCache.fighter=gltf.scene;
+    }, undefined, err=>console.warn('[GLB] F22 load error:',err));
+
+    loader.load('taikuho.glb', gltf=>{
+        _colorizeGLB(gltf.scene,'taikuho');
+        gltf.scene.scale.setScalar(0.1); // 対空砲
+        _glbCache.taikuho=gltf.scene;
+    }, undefined, err=>console.warn('[GLB] taikuho load error:',err));
+})();
+
+// GLBモデルを複製してシーンに追加できる形にする
+function _instantiateGLB(type){
+    const src=_glbCache[type];
+    if(!src) return null;
+    const clone=src.clone(true);
+    // cloneでもmaterialを個別に複製して flash効果に対応
+    clone.traverse(c=>{
+        if(c.isMesh&&c.material){
+            c.material=c.material.clone();
+        }
+    });
+    return clone;
+}
+
+// ── ヘリコプター spawner ──
+function spawnHelicopter(){
+    const model=_instantiateGLB('helicopter');
+    if(!model) return;
+    const angle=Math.random()*Math.PI*2, dist=180+Math.random()*60;
+    const ax=ufo.position.x+Math.cos(angle)*dist;
+    const az=ufo.position.z+Math.sin(angle)*dist;
+    const ay=45+Math.random()*20;
+    model.position.set(ax,ay,az);
+    scene.add(model);
+
+    // ヘリのメインローター（Y軸回転）とテールローター（X軸回転）用グループを追加
+    const mainRotor=new THREE.Group();
+    const blade1=new THREE.Mesh(new THREE.BoxGeometry(9,0.12,0.5),new THREE.MeshStandardMaterial({color:0x1a3010,metalness:0.2,roughness:0.85}));
+    const blade2=new THREE.Mesh(new THREE.BoxGeometry(9,0.12,0.5),new THREE.MeshStandardMaterial({color:0x1a3010,metalness:0.2,roughness:0.85}));
+    blade2.rotation.y=Math.PI/2;
+    mainRotor.add(blade1,blade2);
+    mainRotor.position.set(0,2.5,0);
+    model.add(mainRotor);
+
+    const tailRotor=new THREE.Group();
+    const tb1=new THREE.Mesh(new THREE.BoxGeometry(0.12,2.2,0.28),new THREE.MeshStandardMaterial({color:0x1a3010,metalness:0.2,roughness:0.85}));
+    const tb2=new THREE.Mesh(new THREE.BoxGeometry(0.12,2.2,0.28),new THREE.MeshStandardMaterial({color:0x1a3010,metalness:0.2,roughness:0.85}));
+    tb2.rotation.x=Math.PI/2;
+    tailRotor.add(tb1,tb2);
+    tailRotor.position.set(-4.0,1.0,0.8);
+    model.add(tailRotor);
+
+    apaches.push({
+        mesh:model, type:'helicopter',
+        mainRotor, tailRotor,
+        hp:3, maxHp:3,
+        shootTimer:2+Math.random()*2, flashTimer:0,
+        flyDir:new THREE.Vector3(), flyTimer:0,
+        orbitAngle:angle, orbitDir:Math.random()<0.5?1:-1, orbitDirTimer:3+Math.random()*4
+    });
+    soundManager.startApacheSound(model.uuid);
+    _showEnemyWarning('⚠ HELICOPTER INCOMING ⚠');
+}
+
+// ── 戦闘機 spawner ──
+function spawnFighter(){
+    const model=_instantiateGLB('fighter');
+    if(!model) return;
+    const angle=Math.random()*Math.PI*2, dist=220+Math.random()*80;
+    const ax=ufo.position.x+Math.cos(angle)*dist;
+    const az=ufo.position.z+Math.sin(angle)*dist;
+    const ay=58+Math.random()*18;
+    model.position.set(ax,ay,az);
+    // 先頭方向を揃える（F22はX軸方向が機首と仮定）
+    model.rotation.y=Math.random()*Math.PI*2;
+    scene.add(model);
+
+    // 初期飛行方向（UFOへ向かう）
+    const flyDir=new THREE.Vector3(
+        ufo.position.x-ax, 0, ufo.position.z-az
+    ).normalize();
+
+    apaches.push({
+        mesh:model, type:'fighter',
+        mainRotor:null, tailRotor:null,
+        hp:4, maxHp:4,
+        shootTimer:1.5+Math.random()*2, flashTimer:0,
+        flyDir, flyTimer:0,
+        passState:'approach' // 'approach' | 'pass' | 'turn'
+    });
+    soundManager.startApacheSound(model.uuid);
+    _showEnemyWarning('⚠ F-22 FIGHTER INCOMING ⚠');
+}
+
+// ── 対空砲 spawner ──
+function spawnTaikuho(){
+    const model=_instantiateGLB('taikuho');
+    if(!model) return;
+    const angle=Math.random()*Math.PI*2, dist=100+Math.random()*80;
+    const ax=ufo.position.x+Math.cos(angle)*dist;
+    const az=ufo.position.z+Math.sin(angle)*dist;
+    model.position.set(ax, 1.5, az);
+    scene.add(model);
+
+    apaches.push({
+        mesh:model, type:'taikuho',
+        mainRotor:null, tailRotor:null,
+        hp:2, maxHp:2,
+        shootTimer:2.5+Math.random()*2, flashTimer:0,
+        flyDir:new THREE.Vector3(), flyTimer:0
+    });
+    // 対空砲は音なし（砲声はshoot時のみ）
+    _showEnemyWarning('⚠ ANTI-AIR GUN DEPLOYED ⚠');
+}
+
+// 出現時の警告共通関数
+function _showEnemyWarning(msg){
+    apacheWarningTimer=3.0;
+    const el=document.getElementById('apache-warning');
+    el.textContent=msg;
+    el.style.opacity='1';
+}
+
+// ランダムにどれかを出現させる
+function spawnApache(){
+    const types=['helicopter','fighter','taikuho'];
+    const t=types[Math.floor(Math.random()*types.length)];
+    // GLBがまだロードされていない場合はヘリをプロシージャルで生成
+    if(!_glbCache[t]){
+        _spawnApacheProcedural();
+        return;
+    }
+    if(t==='helicopter') spawnHelicopter();
+    else if(t==='fighter') spawnFighter();
+    else spawnTaikuho();
+}
+
+// GLBロード前のフォールバック（プロシージャル）
+function _spawnApacheProcedural(){
+    const g=new THREE.Group();
+    const armyGreen=getMat(0x2d4a1e,0.8),darkGreen=getMat(0x1a2e12,0.85);
+    const fuselage=new THREE.Mesh(new THREE.CylinderGeometry(1.0,0.7,8,10),armyGreen);
+    fuselage.rotation.z=Math.PI/2;g.add(fuselage);
+    const tailBoom=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.7,5,8),armyGreen);
+    tailBoom.rotation.z=Math.PI/2;tailBoom.position.set(-5.5,0.6,0);g.add(tailBoom);
+    const fin=new THREE.Mesh(new THREE.BoxGeometry(0.2,2.2,1.2),darkGreen);
+    fin.position.set(-7.8,1.4,0);g.add(fin);
+    const mainRotor=new THREE.Group();mainRotor.position.set(0,1.5,0);
+    for(let i=0;i<2;i++){const blade=new THREE.Mesh(new THREE.BoxGeometry(9,0.1,0.55),darkGreen);blade.rotation.y=i*Math.PI/2;mainRotor.add(blade);}
+    g.add(mainRotor);
+    const tailRotor=new THREE.Group();tailRotor.position.set(-8.0,1.2,0.6);
+    for(let i=0;i<2;i++){const tb=new THREE.Mesh(new THREE.BoxGeometry(0.1,2.0,0.25),darkGreen);tb.rotation.x=i*Math.PI/2;tailRotor.add(tb);}
+    g.add(tailRotor);
+    const angle=Math.random()*Math.PI*2, dist=180+Math.random()*60;
+    g.position.set(ufo.position.x+Math.cos(angle)*dist, 45+Math.random()*20, ufo.position.z+Math.sin(angle)*dist);
+    scene.add(g);
+    apaches.push({mesh:g,type:'helicopter',mainRotor,tailRotor,hp:3,maxHp:3,shootTimer:2+Math.random()*2,flashTimer:0,flyDir:new THREE.Vector3(),flyTimer:0,orbitAngle:angle,orbitDir:Math.random()<0.5?1:-1,orbitDirTimer:3+Math.random()*4});
+    soundManager.startApacheSound(g.uuid);
+    _showEnemyWarning('⚠ HELICOPTER INCOMING ⚠');
+}
+
+// ======================================================
+// EXPLOSION SYSTEM
+// ======================================================
+const DEBRIS_COUNT=220,PUFF_COUNT=80,RING_COUNT=12,FLASH_COUNT=8;
+const _debrisPool=[],_debrisActive=[],_puffPool=[],_puffActive=[],_ringPool=[],_ringActive=[],_flashPool=[],_flashActive=[];
+const _dGeo1=new THREE.BoxGeometry(0.55,0.55,0.55),_dGeo2=new THREE.SphereGeometry(0.38,4,3);
+const _pGeo=new THREE.SphereGeometry(1,6,4),_rGeo=new THREE.RingGeometry(0.4,1.1,36);
+for(let i=0;i<DEBRIS_COUNT;i++){const m=new THREE.Mesh(i%3===0?_dGeo2:_dGeo1,new THREE.MeshBasicMaterial({color:0xff4400,transparent:true,depthWrite:false}));m.visible=false;scene.add(m);_debrisPool.push(m);}
+for(let i=0;i<PUFF_COUNT;i++){const m=new THREE.Mesh(_pGeo,new THREE.MeshBasicMaterial({color:0xff4400,transparent:true,depthWrite:false}));m.visible=false;scene.add(m);_puffPool.push(m);}
+for(let i=0;i<RING_COUNT;i++){const m=new THREE.Mesh(_rGeo,new THREE.MeshBasicMaterial({color:0xff6600,transparent:true,side:THREE.DoubleSide,depthWrite:false}));m.rotation.x=-Math.PI/2;m.visible=false;scene.add(m);_ringPool.push(m);}
+for(let i=0;i<FLASH_COUNT;i++){const l=new THREE.PointLight(0xff6600,0,150);scene.add(l);_flashPool.push(l);}
+
+function _poolGet(pool){return pool.find(m=>!m.visible)||null;}
+function _flashGet(){return _flashPool.find(l=>l.intensity===0)||null;}
+
+function createExplosion(pos,scale=1.0){
+    const fl=_flashGet();
+    if(fl){fl.position.copy(pos);fl.color.setHex(0xff8833);fl.intensity=40*scale;fl.distance=130*scale;_flashActive.push({l:fl,age:0,maxAge:0.6});}
+    [{delay:0,maxScale:9*scale,maxAge:0.55,opa:0.85},{delay:80,maxScale:6*scale,maxAge:0.75,opa:0.55}].forEach(cfg=>{
+        const spawn=()=>{const r=_poolGet(_ringPool);if(!r)return;r.position.copy(pos);r.position.y=pos.y+0.3;r.scale.setScalar(0.05);r.material.color.setHex(cfg.opa>0.7?0xffcc44:0xff6600);r.material.opacity=cfg.opa;r.visible=true;_ringActive.push({m:r,age:0,maxAge:cfg.maxAge,maxScale:cfg.maxScale});};
+        cfg.delay===0?spawn():setTimeout(spawn,cfg.delay);
+    });
+    const FIRE_COLORS=[0xff2200,0xff5500,0xff8800,0xffcc00,0xffffff];
+    const puffN=Math.min(Math.round(10*scale),18);
+    for(let i=0;i<puffN;i++){
+        const p=_poolGet(_puffPool);if(!p)continue;
+        const isSmoke=i>=puffN*0.55;
+        p.position.copy(pos);p.position.x+=(Math.random()-0.5)*2*scale;p.position.z+=(Math.random()-0.5)*2*scale;p.position.y+=Math.random()*1.5*scale;
+        p.material.color.setHex(isSmoke?0x151515:FIRE_COLORS[Math.floor(Math.random()*FIRE_COLORS.length)]);
+        p.material.opacity=isSmoke?0.55:0.92;
+        const sStart=0.4*scale,sEnd=(isSmoke?4:2.5)*scale;p.scale.setScalar(sStart);p.visible=true;
+        _puffActive.push({m:p,vx:(Math.random()-0.5)*0.7,vy:1.8+Math.random()*3.5*scale,vz:(Math.random()-0.5)*0.7,age:0,maxAge:0.65+Math.random()*0.55,sStart,sEnd,isSmoke});
+    }
+    const DEBRIS_COLORS=[0xff4400,0xff7700,0xffcc00,0xff1100,0xffffff,0xff6622];
+    const debN=Math.min(Math.round(14*scale),24);
+    for(let i=0;i<debN;i++){
+        const d=_poolGet(_debrisPool);if(!d)continue;
+        d.position.copy(pos);d.material.color.setHex(DEBRIS_COLORS[Math.floor(Math.random()*DEBRIS_COLORS.length)]);d.material.opacity=1.0;d.visible=true;
+        const sp=(2+Math.random()*4.5)*scale,az=Math.random()*Math.PI*2,el=Math.random()*Math.PI*0.7;
+        _debrisActive.push({m:d,vx:Math.cos(az)*Math.sin(el)*sp,vy:Math.cos(el)*sp+2,vz:Math.sin(az)*Math.sin(el)*sp,age:0,maxAge:0.9+Math.random()*0.7});
+    }
+}
+
+function updateExplosions(dt){
+    for(let i=_debrisActive.length-1;i>=0;i--){
+        const d=_debrisActive[i];d.age+=dt;
+        if(d.age>=d.maxAge){d.m.visible=false;_debrisActive.splice(i,1);continue;}
+        const t=d.age/d.maxAge;
+        d.m.position.x+=d.vx*dt;d.m.position.y+=d.vy*dt-9.8*d.age*dt;d.m.position.z+=d.vz*dt;
+        d.m.rotation.x+=0.18;d.m.rotation.z+=0.14;d.m.material.opacity=1-t*t;d.m.scale.setScalar(1.0+t*0.4);
+    }
+    for(let i=_puffActive.length-1;i>=0;i--){
+        const p=_puffActive[i];p.age+=dt;
+        if(p.age>=p.maxAge){p.m.visible=false;_puffActive.splice(i,1);continue;}
+        const t=p.age/p.maxAge;
+        p.m.position.x+=p.vx*dt;p.m.position.y+=p.vy*dt*(1-t*0.6);p.m.position.z+=p.vz*dt;
+        p.m.scale.setScalar(p.sStart+(p.sEnd-p.sStart)*Math.sqrt(t));
+        p.m.material.opacity=p.isSmoke?(1-t)*0.45:(1-t*t)*0.88;
+    }
+    for(let i=_ringActive.length-1;i>=0;i--){
+        const r=_ringActive[i];r.age+=dt;
+        if(r.age>=r.maxAge){r.m.visible=false;_ringActive.splice(i,1);continue;}
+        const t=r.age/r.maxAge;
+        r.m.scale.setScalar(r.maxScale*Math.sqrt(t));r.m.material.opacity=(1-t)*0.85;
+    }
+    for(let i=_flashActive.length-1;i>=0;i--){
+        const f=_flashActive[i];f.age+=dt;
+        if(f.age>=f.maxAge){f.l.intensity=0;_flashActive.splice(i,1);continue;}
+        f.l.intensity*=0.82;
+    }
+}
+
+// ======================================================
+// TARGETS
+// ======================================================
+const targets=[];
+let score=0,abductCount=0;
+let isFastMode=false;
+const collected=[];
+const clock=new THREE.Clock();
+const keys={};
+let isAbducting=false;
+
+const TARGET_DEFS=[
+    {type:'human',title:'会社員',icon:'👔',score:100,shirt:0x2255aa,pants:0x334466,skin:0xf5c5a0,hair:0x221100},
+    {type:'human',title:'ギャング',icon:'🔫',score:250,shirt:0x222222,pants:0x111111,skin:0xd08840,hair:0x000000},
+    {type:'human',title:'大統領',icon:'🇺🇸',score:5000,shirt:0x0044bb,pants:0xcc0022,skin:0xf0d0a0,hair:0xdddddd},
+    {type:'human',title:'詐欺師',icon:'🃏',score:350,shirt:0xddaa44,pants:0x442211,skin:0xf5c5a0,hair:0x664422},
+    {type:'human',title:'殺し屋',icon:'🗡️',score:400,shirt:0x223366,pants:0x111122,skin:0xd0b090,hair:0x111111},
+    {type:'human',title:'配達員',icon:'📦',score:150,shirt:0xcc6600,pants:0x334433,skin:0xf5c5a0,hair:0x442200},
+    {type:'human',title:'警察官',icon:'👮',score:300,shirt:0x1133aa,pants:0x001133,skin:0xf5c5a0,hair:0x221100},
+    {type:'human',title:'消防士',icon:'🚒',score:300,shirt:0xff3300,pants:0x331100,skin:0xf0c090,hair:0x442200},
+    {type:'human',title:'医者',icon:'👨‍⚕️',score:400,shirt:0xffffff,pants:0xdddddd,skin:0xf5c5a0,hair:0x221100},
+    {type:'human',title:'地面師',icon:'📋',score:600,shirt:0x3366cc,pants:0x334466,skin:0xf5c5a0,hair:0x442200},
+    {type:'human',title:'大学生',icon:'🎓',score:80,shirt:0x5588ff,pants:0x333366,skin:0xf5c5a0,hair:0x221100},
+    {type:'human',title:'ホームレス',icon:'🛖',score:50,shirt:0x997755,pants:0x665544,skin:0xc8a070,hair:0x332211},
+    {type:'human',title:'サーファー',icon:'🏄',score:120,shirt:0x00aaff,pants:0xff8800,skin:0xd4a060,hair:0xddaa33},
+    {type:'human',title:'農夫',icon:'🌾',score:150,shirt:0xdd9944,pants:0x5588bb,skin:0xe0b080,hair:0x885522},
+    {type:'human',title:'ロック歌手',icon:'🎸',score:500,shirt:0x110011,pants:0x111111,skin:0xf5c5a0,hair:0x000000},
+    {type:'human',title:'売人',icon:'🧪',score:500,shirt:0x111133,pants:0x222244,skin:0xd08840,hair:0x000000},
+    {type:'human',title:'フェミニスト',icon:'✊',score:220,shirt:0xff44aa,pants:0x553366,skin:0xf5c5a0,hair:0x9933cc},
+    {type:'human',title:'環境テロリスト',icon:'🌳',score:450,shirt:0x225522,pants:0x334433,skin:0xd4b090,hair:0x443322},
+    {type:'human',title:'不法移民',icon:'🌮',score:120,shirt:0xdd8833,pants:0x443322,skin:0xcc8840,hair:0x221100},
+    {type:'human',title:'タクシードライバー',icon:'🚕',score:180,shirt:0xddcc22,pants:0x333322,skin:0xd08840,hair:0x221100},
+    {type:'human',title:'Uberドライバー',icon:'📱',score:200,shirt:0x111111,pants:0x222222,skin:0xd09060,hair:0x221100},
+    {type:'human',title:'陰謀論者',icon:'🎩',score:350,shirt:0x334466,pants:0x222233,skin:0xf5c5a0,hair:0x553311},
+    {type:'human',title:'銃マニア',icon:'🔫',score:400,shirt:0x884422,pants:0x553311,skin:0xf0d0a0,hair:0x774422},
+    {type:'human',title:'ヒップスター',icon:'☕',score:160,shirt:0x334455,pants:0x221122,skin:0xf5c5a0,hair:0x221100},
+    {type:'human',title:'ラッパー',icon:'🎤',score:450,shirt:0xffffff,pants:0x111111,skin:0x7a4520,hair:0x000000},
+    {type:'human',title:'TikToker',icon:'📸',score:300,shirt:0xee44cc,pants:0x330033,skin:0xf5c5a0,hair:0xff4488},
+    {type:'human',title:'弁護士',icon:'⚖️',score:800,shirt:0x223355,pants:0x1a2244,skin:0xf5c5a0,hair:0x221100},
+    {type:'human',title:'怪しい牧師',icon:'✝️',score:350,shirt:0x111111,pants:0x111111,skin:0xf0d0a0,hair:0xdddddd},
+    {type:'human',title:'保安官',icon:'⭐',score:400,shirt:0x886633,pants:0x554422,skin:0xf0c080,hair:0x773311},
+    {type:'human',title:'マフィア',icon:'🤌',score:700,shirt:0x222222,pants:0x111111,skin:0xf0c0a0,hair:0x221100},
+    {type:'human',title:'賞金稼ぎ',icon:'💰',score:650,shirt:0x553322,pants:0x331111,skin:0xd0a060,hair:0x553322},
+    {type:'human',title:'ビーガン',icon:'🥦',score:180,shirt:0x44aa44,pants:0x224422,skin:0xf5c5a0,hair:0x996633},
+    {type:'human',title:'ドラッグクイーン',icon:'💅',score:500,shirt:0xff2299,pants:0x220022,skin:0xf0c0a0,hair:0xff44ff},
+    {type:'human',title:'MAGA信者',icon:'🧢',score:280,shirt:0xff2222,pants:0x222244,skin:0xf5c5a0,hair:0x884422},
+    {type:'human',title:'大麻農家',icon:'🌿',score:260,shirt:0x446633,pants:0x334422,skin:0xd4b090,hair:0x885533},
+    {type:'human',title:'プロレスラー',icon:'💪',score:550,shirt:0xff4400,pants:0x111111,skin:0xd08840,hair:0x111111},
+    {type:'human',title:'チアリーダー',icon:'📣',score:200,shirt:0xff2255,pants:0xff2255,skin:0xf5c5a0,hair:0xffdd44},
+    {type:'human',title:'NFT成金',icon:'🐒',score:900,shirt:0x223344,pants:0x111133,skin:0xf5c5a0,hair:0x221100},
+    {type:'human',title:'インフルエンサー',icon:'💄',score:350,shirt:0xffaacc,pants:0xdd88aa,skin:0xf5c5a0,hair:0xffdd88},
+    {type:'human',title:'民兵',icon:'🪖',score:450,shirt:0x446633,pants:0x334422,skin:0xf0c080,hair:0x664422},
+    {type:'human',title:'移民労働者',icon:'🌽',score:130,shirt:0xcc8833,pants:0x553322,skin:0xcc8840,hair:0x221100},
+    {type:'human',title:'カルト信者',icon:'🕯️',score:400,shirt:0xffffff,pants:0xffffff,skin:0xf5c5a0,hair:0x553311},
+    {type:'human',title:'バイカー',icon:'🏍️',score:350,shirt:0x111111,pants:0x111111,skin:0xd09060,hair:0x553322},
+    {type:'human',title:'フードトラック',icon:'🌯',score:200,shirt:0xee6622,pants:0x333333,skin:0xcc8840,hair:0x221100},
+    {type:'human',title:'ポッドキャスター',icon:'🎙️',score:280,shirt:0x334455,pants:0x222233,skin:0xf5c5a0,hair:0x221100},
+    {type:'human',title:'コスプレイヤー',icon:'🧙',score:300,shirt:0x6622cc,pants:0x440088,skin:0xf5c5a0,hair:0x00ccff},
+    {type:'human',title:'元囚人',icon:'🔒',score:320,shirt:0xeeaa00,pants:0xeeaa00,skin:0xd08840,hair:0x111111},
+    {type:'human',title:'ウォール街マン',icon:'💹',score:1200,shirt:0x112244,pants:0x001133,skin:0xf5c5a0,hair:0x221100},
+    {type:'human',title:'フラットアーサー',icon:'🌍',score:280,shirt:0x334433,pants:0x223322,skin:0xf5c5a0,hair:0x553311},
+    {type:'human',title:'ストリート説教師',icon:'📢',score:150,shirt:0x333333,pants:0x222222,skin:0xf0d0a0,hair:0x221100},
+    {type:'human',title:'元CIA',icon:'🕵️',score:1000,shirt:0x223344,pants:0x112233,skin:0xf5c5a0,hair:0x553311},
+    {type:'human',title:'代理母',icon:'🤰',score:600,shirt:0xffaacc,pants:0x9988aa,skin:0xf5c5a0,hair:0x664422},
+    {type:'human',title:'MLM勧誘員',icon:'🏅',score:240,shirt:0x4488cc,pants:0x336699,skin:0xf5c5a0,hair:0x553311},
+    {type:'human',title:'スケーター',icon:'🛹',score:140,shirt:0xee8833,pants:0x333333,skin:0xf5c5a0,hair:0x221100},
+    {type:'human',title:'カジノ荒らし',icon:'🎰',score:700,shirt:0x442255,pants:0x221133,skin:0xf5c5a0,hair:0x221100},
+    {type:'cow',title:'牛',icon:'🐄',score:500},
+    {type:'horse',title:'馬',icon:'🐎',score:600},
+    {type:'bear',title:'グリズリー',icon:'🐻',score:1200},
+    {type:'wolf',title:'オオカミ',icon:'🐺',score:900},
+    {type:'deer',title:'シカ',icon:'🦌',score:400},
+    {type:'eagle',title:'ハクトウワシ',icon:'🦅',score:800},
+    {type:'bison',title:'バッファロー',icon:'🦬',score:1000},
+    {type:'raccoon',title:'アライグマ',icon:'🦝',score:300},
+    {type:'turkey',title:'七面鳥',icon:'🦃',score:250},
+    {type:'alligator',title:'アリゲーター',icon:'🐊',score:1500},
+    {type:'car',title:'マスタング',icon:'🚗',score:2000},
+    {type:'truck',title:'ピックアップトラック',icon:'🚛',score:3000},
+    {type:'bus',title:'スクールバス',icon:'🚌',score:4000},
+];
+
+function getRandomDef(biome){
+    const humans=TARGET_DEFS.filter(d=>d.type==='human');
+    const wildAnims=TARGET_DEFS.filter(d=>['bear','wolf','deer','eagle','bison','raccoon','turkey','alligator'].includes(d.type));
+    const farmAnims=TARGET_DEFS.filter(d=>['cow','horse'].includes(d.type));
+    const vehicles=TARGET_DEFS.filter(d=>['car','truck','bus'].includes(d.type));
+    let pool;
+    if(biome===BIOME.URBAN)pool=[...humans,...humans,...humans,...vehicles,...vehicles];
+    else if(biome===BIOME.SUBURB)pool=[...humans,...humans,...vehicles];
+    else if(biome===BIOME.INDUSTRIAL)pool=[...humans,...vehicles,...vehicles];
+    else if(biome===BIOME.FOREST)pool=[...wildAnims,...wildAnims,...wildAnims,...wildAnims,...humans.slice(0,2)];
+    else if(biome===BIOME.MOUNTAIN)pool=[...wildAnims,...wildAnims,...wildAnims,...humans.slice(0,1)];
+    else if(biome===BIOME.GRASSLAND)pool=[...wildAnims,...wildAnims,...farmAnims,...humans.slice(10,13)];
+    else if(biome===BIOME.FARMLAND)pool=[...farmAnims,...farmAnims,...farmAnims,...wildAnims,...humans.slice(11,14)];
+    else if(biome===BIOME.BEACH)pool=[...humans.slice(11,13),...wildAnims.slice(0,3)];
+    else pool=[...humans,...wildAnims];
+    return pool[Math.floor(Math.random()*pool.length)];
+}
+
+const _targetMatCache=new Map();
+function getMatBright(color,roughness=0.8){
+    const key=`bright_${color}_${roughness}`;
+    if(!_targetMatCache.has(key)){
+        const m=new THREE.MeshStandardMaterial({color,roughness,metalness:0.0,emissive:new THREE.Color(color).multiplyScalar(0.15)});
+        _targetMatCache.set(key,m);
+    }
+    return _targetMatCache.get(key);
+}
+
+function createHuman(def){
+    const g=new THREE.Group();
+    const skin=getMatBright(def.skin||0xf5c5a0,0.8),shirt=getMatBright(def.shirt||0x4477cc,0.9),pants=getMatBright(def.pants||0x222244,0.9),hair=getMatBright(def.hair||0x221100,1.0);
+    [-0.22,0.22].forEach(ox=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.14,1.0,8),pants);leg.position.set(ox,0.5,0);g.add(leg);});
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.32,1.1,10),shirt);body.position.y=1.5;g.add(body);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.32,12,10),skin);head.position.y=2.4;g.add(head);
+    const hairM=new THREE.Mesh(new THREE.SphereGeometry(0.34,12,10,0,Math.PI*2,0,Math.PI*0.5),hair);hairM.position.y=2.5;g.add(hairM);
+    [-0.45,0.45].forEach(ox=>{const arm=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.09,0.9,8),shirt);arm.position.set(ox,1.65,0);arm.rotation.z=ox>0?-0.3:0.3;g.add(arm);});
+    if(def.title==='警察官'){const badge=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,0.05,6),new THREE.MeshStandardMaterial({color:0xffdd00,metalness:0.9}));badge.position.set(0.15,1.8,0.33);g.add(badge);}
+    if(def.title==='大統領'){const tie=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.6,0.05),new THREE.MeshStandardMaterial({color:0xff2222}));tie.position.set(0,1.5,0.33);g.add(tie);}
+    return g;
+}
+function createCow(){const g=new THREE.Group();const bMat=getMatBright(0xeeeeee,0.9),sMat=getMatBright(0x222222,0.9),hMat=getMatBright(0xddddcc,0.9);const body=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.2,1.0),bMat);body.position.y=1.6;g.add(body);const spot=new THREE.Mesh(new THREE.SphereGeometry(0.45,8,8),sMat);spot.position.set(0.3,1.8,0.52);spot.scale.z=0.15;g.add(spot);const head=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.8,0.8),hMat);head.position.set(1.4,1.7,0);g.add(head);const nose=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.25,0.25,8),getMatBright(0xffaaaa,0.9));nose.rotation.z=Math.PI/2;nose.position.set(1.9,1.55,0);g.add(nose);[0.15,-0.15].forEach(oz=>{const horn=new THREE.Mesh(new THREE.ConeGeometry(0.07,0.5,6),getMatBright(0xddbb77,0.8));horn.position.set(1.3,2.25,oz);horn.rotation.z=Math.PI;g.add(horn);});[[-0.7,-0.3],[0.7,-0.3],[-0.7,0.3],[0.7,0.3]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.14,1.1,8),bMat);leg.position.set(lx,0.55,lz);g.add(leg);});return g;}
+function createHorse(){const g=new THREE.Group();const mat=getMatBright(0x9a5820,0.9);const body=new THREE.Mesh(new THREE.BoxGeometry(3.0,1.4,1.0),mat);body.position.y=2.0;g.add(body);const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.4,1.5,8),mat);neck.position.set(1.6,2.8,0);neck.rotation.z=0.4;g.add(neck);const head=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.7,0.6),mat);head.position.set(2.3,3.4,0);g.add(head);const mane=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.8,0.1),getMatBright(0x221100,1.0));mane.position.set(1.8,3.2,0);g.add(mane);[[-1.0,-0.35],[0.8,-0.35],[-1.0,0.35],[0.8,0.35]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.15,1.6,8),mat);leg.position.set(lx,0.8,lz);g.add(leg);});return g;}
+function createBear(){const g=new THREE.Group();const mat=getMatBright(0x7a4020,0.95);const body=new THREE.Mesh(new THREE.SphereGeometry(1.4,10,8),mat);body.position.y=2.2;body.scale.set(1,0.9,0.8);g.add(body);const head=new THREE.Mesh(new THREE.SphereGeometry(0.8,10,8),mat);head.position.set(1.4,3.0,0);g.add(head);const snout=new THREE.Mesh(new THREE.SphereGeometry(0.3,8,8),getMatBright(0xaa7050,0.9));snout.position.set(2.1,2.8,0);snout.scale.z=0.6;g.add(snout);[0.2,-0.2].forEach(oz=>{const ear=new THREE.Mesh(new THREE.SphereGeometry(0.2,8,6),mat);ear.position.set(1.2,3.7,oz);g.add(ear);});[[-0.8,-0.45],[0.8,-0.45],[-0.8,0.45],[0.8,0.45]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.28,1.2,8),mat);leg.position.set(lx,0.6,lz);g.add(leg);});return g;}
+function createWolf(){const g=new THREE.Group();const mat=getMatBright(0x8899aa,0.9);const body=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.9,0.7),mat);body.position.y=1.6;g.add(body);const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.28,0.6,8),mat);neck.position.set(1.1,2.0,0);neck.rotation.z=0.5;g.add(neck);const head=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.55,0.5),mat);head.position.set(1.5,2.4,0);g.add(head);const snout=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.3,0.4),getMatBright(0x778899,0.9));snout.position.set(1.9,2.25,0);g.add(snout);[0.15,-0.15].forEach(oz=>{const ear=new THREE.Mesh(new THREE.ConeGeometry(0.08,0.3,4),mat);ear.position.set(1.35,2.75,oz);g.add(ear);});[[-0.65,-0.25],[0.65,-0.25],[-0.65,0.25],[0.65,0.25]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.08,0.9,8),mat);leg.position.set(lx,0.45,lz);g.add(leg);});const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.03,0.9,6),mat);tail.position.set(-1.2,1.8,0);tail.rotation.z=0.8;g.add(tail);return g;}
+function createDeer(){const g=new THREE.Group();const mat=getMatBright(0xe09040,0.9);const body=new THREE.Mesh(new THREE.BoxGeometry(2.2,1.0,0.8),mat);body.position.y=1.8;g.add(body);const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.25,1.0,8),mat);neck.position.set(1.1,2.5,0);neck.rotation.z=0.4;g.add(neck);const head=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.55,0.5),mat);head.position.set(1.6,3.1,0);g.add(head);[0.15,-0.15].forEach((oz,i)=>{const base=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.08,0.8,6),getMatBright(0xcc9944,0.9));base.position.set(1.35,3.65,oz);g.add(base);const branch=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.06,0.5,6),getMatBright(0xcc9944,0.9));branch.position.set(1.2+oz*0.5,4.1,oz);branch.rotation.z=0.6*(i===0?1:-1);g.add(branch);});[[-0.75,-0.3],[0.75,-0.3],[-0.75,0.3],[0.75,0.3]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.08,1.4,8),mat);leg.position.set(lx,0.7,lz);g.add(leg);});return g;}
+function createEagle(){const g=new THREE.Group();const mat=getMatBright(0x3a2508,0.85),wMat=getMatBright(0x1a1005,0.85);const body=new THREE.Mesh(new THREE.SphereGeometry(0.6,10,8),mat);body.position.y=1.5;body.scale.set(1,0.9,1.2);g.add(body);const head=new THREE.Mesh(new THREE.SphereGeometry(0.35,10,8),getMatBright(0xffffff,0.8));head.position.y=2.25;g.add(head);const beak=new THREE.Mesh(new THREE.ConeGeometry(0.07,0.35,6),getMatBright(0xffcc00,0.7));beak.position.set(0.35,2.2,0);beak.rotation.z=-Math.PI/2;g.add(beak);[-1,1].forEach(s=>{const wing=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.1,0.6),wMat);wing.position.set(s*1.1,1.5,0);wing.rotation.z=s*0.2;g.add(wing);});return g;}
+function createBison(){const g=new THREE.Group();const mat=getMatBright(0x3a2010,0.95);const body=new THREE.Mesh(new THREE.SphereGeometry(1.5,10,8),mat);body.position.y=2.2;body.scale.set(1.4,1.0,0.9);g.add(body);const hump=new THREE.Mesh(new THREE.SphereGeometry(0.9,8,8),mat);hump.position.set(0.5,3.2,0);g.add(hump);const head=new THREE.Mesh(new THREE.BoxGeometry(1.3,1.0,0.9),mat);head.position.set(2.0,2.5,0);g.add(head);const beard=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.05,0.7,8),getMatBright(0x221100,0.99));beard.position.set(2.3,1.7,0);g.add(beard);[0.2,-0.2].forEach(oz=>{const horn=new THREE.Mesh(new THREE.ConeGeometry(0.1,0.7,6),getMatBright(0x554433,0.9));horn.position.set(2.0,3.15,oz);horn.rotation.z=0.5;g.add(horn);});[[-1.0,-0.4],[0.8,-0.4],[-1.0,0.4],[0.8,0.4]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.22,1.4,8),mat);leg.position.set(lx,0.7,lz);g.add(leg);});return g;}
+function createRaccoon(){const g=new THREE.Group();const mat=getMatBright(0x9a9a9a,0.9);const body=new THREE.Mesh(new THREE.SphereGeometry(0.5,8,8),mat);body.position.y=0.8;body.scale.set(1.2,0.9,0.9);g.add(body);const head=new THREE.Mesh(new THREE.SphereGeometry(0.38,8,8),mat);head.position.y=1.45;g.add(head);const mask=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.2,0.1),getMatBright(0x111111,0.9));mask.position.set(0,1.5,0.38);g.add(mask);[0.15,-0.15].forEach(oz=>{const ear=new THREE.Mesh(new THREE.ConeGeometry(0.1,0.2,6),mat);ear.position.set(0,1.78,oz);g.add(ear);});const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.05,0.9,8),getMatBright(0x777777,0.9));tail.position.set(-0.65,0.8,0);tail.rotation.z=0.9;g.add(tail);[[-0.3,-0.2],[0.3,-0.2],[-0.3,0.2],[0.3,0.2]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.05,0.55,6),mat);leg.position.set(lx,0.28,lz);g.add(leg);});return g;}
+function createTurkey(){const g=new THREE.Group();const mat=getMatBright(0x662200,0.9);const body=new THREE.Mesh(new THREE.SphereGeometry(0.65,8,8),mat);body.position.y=1.0;body.scale.set(1.1,0.95,1.3);g.add(body);const head=new THREE.Mesh(new THREE.SphereGeometry(0.22,8,8),getMatBright(0xff4433,0.9));head.position.set(0,1.8,0.7);g.add(head);for(let i=-3;i<=3;i++){const feather=new THREE.Mesh(new THREE.ConeGeometry(0.12,0.9,4),getMatBright(i%2===0?0xcc4400:0xff6600,0.85));feather.position.set(0,1.3,-0.6);feather.rotation.z=i*0.2;feather.rotation.x=0.4;g.add(feather);}[[-0.2,0],[0.2,0]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.04,0.6,6),getMatBright(0xeecc44,0.9));leg.position.set(lx,0.3,lz);g.add(leg);});return g;}
+function createAlligator(){const g=new THREE.Group();const mat=getMatBright(0x2a6618,0.9);const body=new THREE.Mesh(new THREE.BoxGeometry(3.5,0.5,0.9),mat);body.position.y=0.5;g.add(body);const head=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.35,0.75),mat);head.position.set(2.4,0.55,0);g.add(head);const tail=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.4,2.5,8),mat);tail.position.set(-2.4,0.45,0);tail.rotation.z=Math.PI/2;g.add(tail);for(let i=0;i<5;i++){const tooth=new THREE.Mesh(new THREE.ConeGeometry(0.04,0.2,4),new THREE.MeshStandardMaterial({color:0xffffff}));tooth.position.set(1.8-i*0.3,0.6,(i%2===0?0.35:-0.35));g.add(tooth);}[[-1.0,-0.38],[0.8,-0.38],[-1.0,0.38],[0.8,0.38]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.08,0.4,6),mat);leg.position.set(lx,0.2,lz);leg.rotation.z=0.5;g.add(leg);});return g;}
+function createCar(color){const g=new THREE.Group();const bMat=new THREE.MeshStandardMaterial({color:color||0xee2222,roughness:0.2,metalness:0.7,emissive:new THREE.Color(color||0xee2222).multiplyScalar(0.08)});const gMat=new THREE.MeshStandardMaterial({color:0x224466,transparent:true,opacity:0.7,metalness:0.3});const tMat=getMat(0x111111,0.9);const bodyL=new THREE.Mesh(new THREE.BoxGeometry(4.0,0.8,1.8),bMat);bodyL.position.y=0.65;g.add(bodyL);const bodyH=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.9,1.6),bMat);bodyH.position.set(-0.1,1.5,0);g.add(bodyH);const ws=new THREE.Mesh(new THREE.PlaneGeometry(1.2,0.75),gMat);ws.position.set(1.05,1.55,0);ws.rotation.y=Math.PI/2-0.3;g.add(ws);[[-1.3,-0.9],[1.3,-0.9],[-1.3,0.9],[1.3,0.9]].forEach(([tx,tz])=>{const tire=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.2,8,16),tMat);tire.rotation.x=Math.PI/2;tire.position.set(tx,0.42,tz);g.add(tire);const rim=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.12,10),getMat(0xaaaaaa,0.2,0.8));rim.rotation.x=Math.PI/2;rim.position.set(tx,0.42,tz);g.add(rim);});return g;}
+function createTruck(){const g=new THREE.Group();const mat=new THREE.MeshStandardMaterial({color:0x4466cc,roughness:0.25,metalness:0.6});const cab=new THREE.Mesh(new THREE.BoxGeometry(2.5,2.5,2.2),mat);cab.position.set(2.8,1.25,0);g.add(cab);const bed=new THREE.Mesh(new THREE.BoxGeometry(4.5,0.4,2.0),getMat(0x555555,0.9));bed.position.set(-1.3,1.0,0);g.add(bed);const bedWall=new THREE.Mesh(new THREE.BoxGeometry(4.5,1.0,0.15),getMat(0x444444,0.9));bedWall.position.set(-1.3,1.5,0.97);g.add(bedWall);[[-2.5,-0.85],[1.8,-0.85],[2.8,-0.85],[-2.5,0.85],[1.8,0.85],[2.8,0.85]].forEach(([tx,tz])=>{const tire=new THREE.Mesh(new THREE.TorusGeometry(0.5,0.22,8,16),getMat(0x111111,0.9));tire.rotation.x=Math.PI/2;tire.position.set(tx,0.5,tz);g.add(tire);});return g;}
+function createBus(){const g=new THREE.Group();const mat=new THREE.MeshStandardMaterial({color:0xffcc00,roughness:0.25,metalness:0.3,emissive:new THREE.Color(0xffcc00).multiplyScalar(0.05)});const body=new THREE.Mesh(new THREE.BoxGeometry(8,2.8,2.4),mat);body.position.y=1.7;g.add(body);const roof=new THREE.Mesh(new THREE.BoxGeometry(8,0.4,2.4),getMat(0xeeaa00,0.5));roof.position.y=3.3;g.add(roof);for(let i=-3;i<=3;i++){const win=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.9),new THREE.MeshBasicMaterial({color:0x88ccff}));win.position.set(i*1.1,2.0,1.21);g.add(win);}[[-2.5,-0.9],[2.5,-0.9],[-2.5,0.9],[2.5,0.9]].forEach(([tx,tz])=>{const tire=new THREE.Mesh(new THREE.TorusGeometry(0.55,0.24,8,16),getMat(0x111111,0.9));tire.rotation.x=Math.PI/2;tire.position.set(tx,0.55,tz);g.add(tire);});return g;}
+
+function buildTargetMesh(def){
+    switch(def.type){
+        case 'human':return createHuman(def);case 'cow':return createCow();case 'horse':return createHorse();
+        case 'bear':return createBear();case 'wolf':return createWolf();case 'deer':return createDeer();
+        case 'eagle':return createEagle();case 'bison':return createBison();case 'raccoon':return createRaccoon();
+        case 'turkey':return createTurkey();case 'alligator':return createAlligator();
+        case 'car':return createCar([0xee2222,0x22aaee,0x22ee55,0xeeaa22][Math.floor(Math.random()*4)]);
+        case 'truck':return createTruck();case 'bus':return createBus();default:return createHuman(def);
+    }
+}
+
+function addTarget(wx,wz,defOverride){
+    const biome=getBiome(wx,wz);
+    if(biome===BIOME.OCEAN||biome===BIOME.RIVER)return;
+    const def=defOverride||getRandomDef(biome);
+    const mesh=buildTargetMesh(def);
+    mesh.position.set(wx,0.05,wz);
+    scene.add(mesh);
+    targets.push({
+        mesh,title:def.title,score:def.score,icon:def.icon,vy:0,
+        weight:def.type==='bus'?800:def.type==='truck'?400:def.type==='car'?250:def.type==='bear'?200:def.type==='bison'?300:50,
+        speed:def.type==='bus'?0.08:def.type==='car'?0.20:def.type==='eagle'?0.3:0.13,
+        fleeDist:def.type==='car'?22:def.type==='eagle'?30:16,
+        wanderDir:Math.random()*Math.PI*2,type:def.type,
+        animPhase:Math.random()*Math.PI*2,spawnChunk:worldToChunk(wx,wz)
+    });
+}
+
+for(let i=0;i<80;i++){
+    const r=30+Math.random()*200,a=Math.random()*Math.PI*2;
+    addTarget(Math.cos(a)*r,Math.sin(a)*r);
+}
+
+// ======================================================
+// CHUNK UPDATE
+// ======================================================
+const chunkTargetCount=new Map();
+function updateChunks(){
+    const{cx:ux,cz:uz}=worldToChunk(ufo.position.x,ufo.position.z);
+    const needed=new Set();
+    for(let dcx=-CHUNK_RENDER_DIST;dcx<=CHUNK_RENDER_DIST;dcx++)
+        for(let dcz=-CHUNK_RENDER_DIST;dcz<=CHUNK_RENDER_DIST;dcz++)
+            needed.add(getChunkKey(ux+dcx,uz+dcz));
+    needed.forEach(key=>{
+        if(!activeChunks.has(key)){
+            const[cx,cz]=key.split(',').map(Number);
+            buildChunk(cx,cz);activeChunks.add(key);
+            if(!chunkTargetCount.has(key)){
+                chunkTargetCount.set(key,0);
+                if(!isFastMode){
+                    const biome=getBiome(cx*CHUNK_SIZE+CHUNK_SIZE/2,cz*CHUNK_SIZE+CHUNK_SIZE/2);
+                    if(biome===BIOME.OCEAN||biome===BIOME.RIVER)return;
+                    const spawnN=4+Math.floor(Math.random()*4);
+                    for(let i=0;i<spawnN;i++){
+                        const wx=cx*CHUNK_SIZE+Math.random()*CHUNK_SIZE;
+                        const wz=cz*CHUNK_SIZE+Math.random()*CHUNK_SIZE;
+                        addTarget(wx,wz);
+                    }
+                }
+            }
+        }
+    });
+    const toRemove=[];
+    activeChunks.forEach(key=>{if(!needed.has(key))toRemove.push(key);});
+    toRemove.forEach(key=>{
+        const chunk=chunkCache.get(key);
+        if(chunk)scene.remove(chunk);
+        chunksInScene.delete(key);
+        activeChunks.delete(key);buildingColliders.delete(key);
+        const[cx,cz]=key.split(',').map(Number);
+        for(let i=targets.length-1;i>=0;i--){
+            const t=targets[i],tc=worldToChunk(t.mesh.position.x,t.mesh.position.z),tkey=getChunkKey(tc.cx,tc.cz);
+            if(tkey===key){scene.remove(t.mesh);targets.splice(i,1);}
+        }
+    });
+    needed.forEach(key=>{
+        const chunk=chunkCache.get(key);
+        if(chunk&&!chunksInScene.has(key)){scene.add(chunk);chunksInScene.add(key);}
+    });
+}
+
+// ======================================================
+// UI
+// ======================================================
+const notifEl=document.getElementById('notification');
+let notifTimeout;
+function showNotif(text){
+    notifEl.textContent=text;notifEl.style.opacity='1';
+    clearTimeout(notifTimeout);
+    notifTimeout=setTimeout(()=>{notifEl.style.opacity='0';},1200);
+}
+const biomeLabel=document.getElementById('biome-label');
+let lastBiomeLabel='';
+const hpFill=document.getElementById('hp-fill');
+const speedIndicator=document.getElementById('speed-indicator');
+// ループ内で毎フレーム呼ばないようにキャッシュ
+const scoreEl=document.getElementById('score');
+const countEl=document.getElementById('count');
+const apacheWarningEl=document.getElementById('apache-warning');
+
+// ======================================================
+// タイトル画面 / ゲームオーバー 管理
+// ======================================================
+const titleScreenEl      = document.getElementById('title-screen');
+const tsGameoverBanner   = document.getElementById('ts-gameover-banner');
+const tsGameoverScore    = document.getElementById('ts-gameover-score');
+const tsStartBtn         = document.getElementById('ts-start-btn');
+
+let isGameStarted = false;
+let isGameOver    = false;
+
+function startGame(){
+    isGameStarted = true;
+    // フェードアウトしてからポインターイベントも無効化
+    titleScreenEl.classList.add('hidden');
+    // sound 初期化（ユーザー操作起点が必要なため START ボタン押下時に行う）
+    _ensureSound();
+}
+
+function triggerGameOver(){
+    if(isGameOver) return;
+    isGameOver = true;
+    // 少し間を置いてタイトル画面へ戻る
+    setTimeout(()=>{
+        tsGameoverScore.textContent = `SCORE: ${score}  |  ABDUCTED: ${abductCount}`;
+        tsGameoverBanner.classList.add('visible');
+        tsStartBtn.textContent = 'PLAY AGAIN';
+        titleScreenEl.classList.remove('hidden');
+    }, 1200);
+}
+
+tsStartBtn.addEventListener('click', ()=>{
+    if(!isGameStarted){
+        startGame();
+    } else {
+        // ゲームオーバー後の「PLAY AGAIN」→ リロードでリセット
+        location.reload();
+    }
+});
+
+// 衝突フラッシュ用 div を事前生成して再利用（毎フレームの createElement を回避）
+const flashDiv=document.createElement('div');
+flashDiv.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,80,0,0.35);pointer-events:none;z-index:999;transition:opacity 0.4s;opacity:0';
+document.body.appendChild(flashDiv);
+let _flashTimeout1=null,_flashTimeout2=null;
+function triggerFlash(){
+    clearTimeout(_flashTimeout1);clearTimeout(_flashTimeout2);
+    flashDiv.style.transition='none';flashDiv.style.opacity='1';
+    _flashTimeout1=setTimeout(()=>{flashDiv.style.transition='opacity 0.4s';flashDiv.style.opacity='0';},80);
+}
+document.addEventListener('contextmenu',e=>e.preventDefault());
+const isTouchDevice=('ontouchstart' in window)||(navigator.maxTouchPoints>0);
+const stickContainer=document.getElementById('virtual-stick-container');
+const stickBase=document.getElementById('stick-base');
+const stickKnob=document.getElementById('stick-knob');
+const hintEl=document.getElementById('controls-hint');
+if(isTouchDevice){stickContainer.style.display='block';hintEl.style.display='none';}
+const vStick={x:0,y:0,active:false,id:null};
+const baseR=55;
+function getStickPos(t){
+    const rect=stickBase.getBoundingClientRect();
+    let dx=t.clientX-(rect.left+rect.width/2),dy=t.clientY-(rect.top+rect.height/2);
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist>baseR){dx=dx/dist*baseR;dy=dy/dist*baseR;}
+    return{dx,dy};
+}
+stickBase.addEventListener('touchstart',e=>{e.preventDefault();const t=e.changedTouches[0];vStick.id=t.identifier;vStick.active=true;const{dx,dy}=getStickPos(t);vStick.x=dx/baseR;vStick.y=dy/baseR;stickKnob.style.transform=`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`;},{passive:false});
+stickBase.addEventListener('touchmove',e=>{e.preventDefault();for(const t of e.changedTouches){if(t.identifier===vStick.id){const{dx,dy}=getStickPos(t);vStick.x=dx/baseR;vStick.y=dy/baseR;stickKnob.style.transform=`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`;}}},{passive:false});
+const resetStick=()=>{vStick.x=0;vStick.y=0;vStick.active=false;vStick.id=null;stickKnob.style.transform='translate(-50%,-50%)';};
+stickBase.addEventListener('touchend',e=>{e.preventDefault();resetStick();},{passive:false});
+stickBase.addEventListener('touchcancel',e=>{e.preventDefault();resetStick();},{passive:false});
+window.addEventListener('keydown',e=>keys[e.code]=true);
+window.addEventListener('keyup',e=>{keys[e.code]=false;if(e.code==='Space')spaceUsed=false;});
+const abductBtn=document.getElementById('abduct-btn');
+abductBtn.addEventListener('pointerdown',()=>isAbducting=true);
+abductBtn.addEventListener('pointerup',()=>isAbducting=false);
+abductBtn.addEventListener('touchstart',e=>{e.preventDefault();isAbducting=true;},{passive:false});
+abductBtn.addEventListener('touchend',e=>{e.preventDefault();isAbducting=false;},{passive:false});
+const attackBtn=document.getElementById('attack-btn');
+attackBtn.addEventListener('pointerdown',()=>{fireAttackBeam();});
+attackBtn.addEventListener('touchstart',e=>{e.preventDefault();fireAttackBeam();},{passive:false});
+
+// ======================================================
+// ⚡ LED光跡システム — 流れるテープランプ（6本・半透明リボン）
+// ======================================================
+const LED_TRAIL_COUNT = 6;
+const LED_TRAIL_POOL_SIZE = LED_TRAIL_COUNT * 22;
+const _ledTrailPool = [];
+const _ledTrailActive = [];
+const _ledWorldPos = new THREE.Vector3();
+
+const _ledTrailGeo = new THREE.BoxGeometry(1.0, 1.0, 1.0);
+for(let i=0;i<LED_TRAIL_POOL_SIZE;i++){
+    const m=new THREE.Mesh(
+        _ledTrailGeo,
+        new THREE.MeshBasicMaterial({
+            color:0xffffff,
+            transparent:true,
+            opacity:0,
+            depthWrite:false,
+            blending:THREE.AdditiveBlending,
+            side:THREE.DoubleSide
+        })
+    );
+    m.visible=false;
+    scene.add(m);
+    _ledTrailPool.push(m);
+}
+
+// ======================================================
+// ANIMATE
+// ======================================================
+const camTarget=new THREE.Vector3(0,40,55);
+const camLookTarget=new THREE.Vector3(0,30,0);
+let chunkUpdateTimer=0,camShakeTimer=0,moveStreak=0,currentSpeed=2.8,dogfightCamT=0;
+let inMilitaryZone=false,militarySpawnTimer=0;
+const militaryOverlayEl=document.getElementById('military-overlay');
+const militaryBannerEl=document.getElementById('military-banner');
+let spaceUsed=false; // keys['_spaceUsed'] から分離
+const prevUfoPos=new THREE.Vector3(),ufoMoveDir=new THREE.Vector3(0,0,-1);
+const _streakQuat=new THREE.Quaternion(),_zAxis=new THREE.Vector3(0,0,1);
+
+function animate(){
+    requestAnimationFrame(animate);
+    const time=clock.getElapsedTime();
+
+    // ── タイトル画面中: UFOだけホバーさせて背景として見せる ──
+    if(!isGameStarted){
+        ufo.position.y=55+Math.sin(time*0.8)*1.2;
+        ufo.rotation.y=time*0.3;
+        antennaTop.material.color.setHSL(0,1,0.5+0.5*Math.sin(time*5));
+        ledRing.children.forEach((led,i)=>{
+            led.material.color.setHSL(((i/24)+time*0.4)%1,1.0,0.65);
+        });
+        domeMat.emissiveIntensity=0.8+Math.sin(time*2)*0.4;
+        renderer.clear();
+        renderer.render(scene,camera);
+        return;
+    }
+
+    // ── ゲームオーバー後: ループ停止（タイトル画面が表示される）──
+    if(isGameOver)return;
+
+    const delta=0.016;
+
+    const isMoving=keys['KeyW']||keys['KeyS']||keys['KeyA']||keys['KeyD']||keys['ArrowUp']||keys['ArrowDown']||keys['ArrowLeft']||keys['ArrowRight']||vStick.active;
+    // ワープ航法カウント: キーボードは常にmax、スティックは触れている間カウント（手を離したらリセット）
+    const isKeyboardMoving=keys['KeyW']||keys['KeyS']||keys['KeyA']||keys['KeyD']||keys['ArrowUp']||keys['ArrowDown']||keys['ArrowLeft']||keys['ArrowRight'];
+    const isFullThrottle=isKeyboardMoving||vStick.active;
+    if(isFullThrottle)moveStreak=Math.min(moveStreak+delta,3.5);
+    else moveStreak=0;
+    const boostT=Math.max(0,(moveStreak-1.2)/2.5);
+    const boostFactor=boostT*boostT;
+    currentSpeed=2.8+boostFactor*18;
+
+    isFastMode=boostFactor>0.7;
+    speedIndicator.style.opacity=boostFactor>0.5?Math.min((boostFactor-0.5)*4,1).toFixed(2):'0';
+
+    prevUfoPos.copy(ufo.position);
+    if(keys['KeyW']||keys['ArrowUp'])ufo.position.z-=currentSpeed;
+    if(keys['KeyS']||keys['ArrowDown'])ufo.position.z+=currentSpeed;
+    if(keys['KeyA']||keys['ArrowLeft'])ufo.position.x-=currentSpeed;
+    if(keys['KeyD']||keys['ArrowRight'])ufo.position.x+=currentSpeed;
+    if(vStick.active){ufo.position.x+=vStick.x*currentSpeed;ufo.position.z+=vStick.y*currentSpeed;}
+    if(isMoving){const mv=new THREE.Vector3().subVectors(ufo.position,prevUfoPos);mv.y=0;if(mv.length()>0.01)ufoMoveDir.copy(mv).normalize();}
+    prevUfoPos.copy(ufo.position);
+
+    // ======================================================
+    // ⚡ LED光跡 — 流れるテープランプ
+    // ======================================================
+    if(boostFactor>0.05&&isMoving){
+        for(let li=0;li<LED_TRAIL_COUNT;li++){
+            const ledIdx=li*4;
+            const led=ledRing.children[ledIdx];
+            led.getWorldPosition(_ledWorldPos);
+
+            let p=null;
+            for(let pi=0;pi<_ledTrailPool.length;pi++){
+                if(!_ledTrailPool[pi].visible){p=_ledTrailPool[pi];break;}
+            }
+            if(!p)continue;
+
+            const hue=((ledIdx/24)+time*0.4)%1;
+
+            const streakLen = 6 + boostFactor * 150;
+            const tapeWidth  = 1 + boostFactor * 1.5;
+            const tapeHeight = 0.1;
+            const initOpacity = Math.min(boostFactor * 0.4, 0.38);
+
+            p.position.copy(_ledWorldPos);
+            p.position.addScaledVector(ufoMoveDir, -streakLen * 0.5);
+
+            _streakQuat.setFromUnitVectors(_zAxis, ufoMoveDir);
+            p.quaternion.copy(_streakQuat);
+            p.scale.set(tapeWidth, tapeHeight, streakLen);
+
+            p.material.color.setHSL(hue, 1.0, 0.98);
+            p.material.opacity = initOpacity;
+            p.visible = true;
+
+            const maxAge = 0.05 + boostFactor * 0.18;
+            _ledTrailActive.push({m:p, age:0, maxAge, initOpacity, streakLen, thickness: tapeWidth});
+        }
+    }
+
+    for(let i=_ledTrailActive.length-1;i>=0;i--){
+        const t=_ledTrailActive[i];
+        t.age+=delta;
+        if(t.age>=t.maxAge){
+            t.m.visible=false;
+            t.m.material.opacity=0;
+            _ledTrailActive.splice(i,1);
+            continue;
+        }
+        const prog=t.age/t.maxAge;
+        const lenNow=t.streakLen*(1-prog*0.5);
+        const tapeW=t.thickness*(1-prog*0.3);
+        t.m.scale.set(tapeW, 0.22, lenNow);
+        t.m.material.opacity=t.initOpacity*(1-prog*prog);
+    }
+
+    ufo.position.y=55+Math.sin(time*0.8)*1.2;
+    ufo.rotation.y=time*0.3;
+    antennaTop.material.color.setHSL(0,1,0.5+0.5*Math.sin(time*5));
+
+    spotLight.position.copy(ufo.position);
+    lightTarget.position.set(ufo.position.x,0,ufo.position.z);
+    ufoPointLight.position.copy(ufo.position);
+    ufoGroundLight.position.copy(ufo.position);
+
+    ufoRing.material.emissiveIntensity=1.2+Math.sin(time*3)*0.5+boostFactor*1.5;
+    if(boostFactor>0.05){ufoRing.material.emissive.setHSL(0.45-boostFactor*0.35,1.0,0.55);}
+    else{ufoRing.material.emissive.setHSL((time*0.15)%1,1.0,0.5);}
+
+    beamGroup.position.set(ufo.position.x,ufo.position.y-27.5,ufo.position.z);
+
+    blobShadow.position.x=ufo.position.x;blobShadow.position.z=ufo.position.z;
+    groundRing.position.x=ufo.position.x;groundRing.position.z=ufo.position.z;
+
+    const abductActive=isAbducting;
+    soundManager.update(isMoving, boostFactor > 0.12, abductActive);
+
+    // アパッチ音量を距離で調整
+    apaches.forEach(ap=>{
+        const d=ufo.position.distanceTo(ap.mesh.position);
+        const vol = Math.max(0, 0.55 * (1 - d / 220));
+        soundManager.setApacheVolume(ap.mesh.uuid, vol);
+    });
+
+    if(abductActive){
+        blobShadowMat.opacity=Math.min(blobShadowMat.opacity+0.06,0.50);
+        const pulse=0.25+Math.abs(Math.sin(time*4))*0.35;
+        groundRingMat.opacity=pulse;groundRing.scale.setScalar(1.0+Math.sin(time*6)*0.06);
+    }else{
+        blobShadowMat.opacity=Math.max(blobShadowMat.opacity-0.05,0);
+        groundRingMat.opacity=Math.max(groundRingMat.opacity-0.06,0);
+    }
+
+    if(keys['Space']&&!spaceUsed){spaceUsed=true;fireAttackBeam();}
+
+    ledRing.children.forEach((led,i)=>{
+        const hue=((i/24)+time*0.4)%1;
+        led.material.color.setHSL(hue,1.0,abductActive?0.92:0.65);
+    });
+
+    domeMat.emissiveIntensity=0.8+Math.sin(time*2)*0.4;
+    glowDisc.material.opacity=0.08+Math.sin(time*2)*0.04;
+
+    beamGroup.visible=abductActive;
+    if(abductActive){
+        spotLight.intensity=2.0;spotLight.color.setHex(0x44ff88);spotLight.angle=Math.PI/7;
+        ufoPointLight.color.setHex(0x00ff44);ufoPointLight.intensity=3;ufoPointLight.distance=80;
+        ufoGroundLight.intensity=1.0;ufoGroundLight.distance=120;
+        const flicker=1.0+Math.sin(time*30)*0.12+Math.sin(time*47)*0.08;
+        beamOuter.material.opacity=0.045*flicker;beamMid.material.opacity=0.09*flicker;
+        beamInner.material.opacity=0.20*flicker;beamCore.material.opacity=0.32*flicker;
+        beamGlow.material.opacity=0.18+Math.sin(time*8)*0.08;
+        beamLight1.intensity=1.5+Math.sin(time*6)*0.5;beamLight2.intensity=1.2+Math.sin(time*7)*0.4;beamLight3.intensity=2.0+Math.sin(time*5)*0.8;
+        bodyMat.emissiveIntensity=0.8+Math.sin(time*4)*0.3;bodyMat.emissive.setHex(0x003322);
+    }else{
+        spotLight.intensity=1.5;spotLight.color.setHex(0x55ccff);spotLight.angle=Math.PI/5;
+        ufoPointLight.color.setHex(0x00cc88);ufoPointLight.intensity=2;ufoPointLight.distance=70;
+        ufoGroundLight.intensity=1.0;ufoGroundLight.distance=110;
+        bodyMat.emissiveIntensity=0.4+Math.sin(time*1.5)*0.15;bodyMat.emissive.setHex(0x112233);
+        beamLight1.intensity=0;beamLight2.intensity=0;beamLight3.intensity=0;
+    }
+
+    attackCooldown-=delta;
+    if(attackBeamTimer>0){attackBeamTimer-=delta;if(attackBeamTimer<=0)attackBeamGroup.visible=false;}
+
+    updateExplosions(delta);
+
+    // 通常スポーン
+    apacheSpawnTimer+=delta;
+    if(apacheSpawnTimer>=APACHE_SPAWN_INTERVAL){apacheSpawnTimer=0;spawnApache();}
+
+    // ── 軍事ゾーン判定 & 大量スポーン ──
+    const nowInMilitary=getBiome(ufo.position.x,ufo.position.z)===BIOME.MILITARY;
+    if(nowInMilitary!==inMilitaryZone){
+        inMilitaryZone=nowInMilitary;
+        militaryOverlayEl.classList.toggle('active',inMilitaryZone);
+        militaryBannerEl.classList.toggle('active',inMilitaryZone);
+        if(inMilitaryZone){
+            militarySpawnTimer=0;
+            // 侵入直後に3体同時スポーン
+            spawnHelicopter();spawnFighter();spawnTaikuho();
+            _showEnemyWarning('⚠ MILITARY ZONE — FORCES SCRAMBLED ⚠');
+        }
+    }
+    if(inMilitaryZone){
+        militarySpawnTimer+=delta;
+        if(militarySpawnTimer>=5){
+            militarySpawnTimer=0;
+            // 5秒ごとに2体スポーン
+            spawnApache();
+            if(Math.random()<0.6)spawnApache();
+        }
+    }
+
+    if(apacheWarningTimer>0){apacheWarningTimer-=delta;apacheWarningEl.style.opacity=Math.min(1,apacheWarningTimer).toString();if(apacheWarningTimer<=0)apacheWarningEl.style.opacity='0';}
+
+    for(let i=apaches.length-1;i>=0;i--){
+        const ap=apaches[i];
+
+        // ローター回転（ヘリのみ）
+        if(ap.mainRotor) ap.mainRotor.rotation.y+=0.45;
+        if(ap.tailRotor) ap.tailRotor.rotation.x+=0.5;
+
+        const dx=ufo.position.x-ap.mesh.position.x;
+        const dy=ufo.position.y-ap.mesh.position.y;
+        const dz=ufo.position.z-ap.mesh.position.z;
+        const dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
+
+        // 距離超過で削除（対空砲は判定を緩める）
+        const maxDist=ap.type==='taikuho'?350:APACHE_MAX_DIST;
+        if(dist>maxDist){
+            soundManager.stopApacheSound(ap.mesh.uuid);
+            scene.remove(ap.mesh);
+            apaches.splice(i,1);
+            continue;
+        }
+
+        // ── タイプ別挙動 ──
+        if(ap.type==='helicopter'){
+            // ヘリ: UFOを一定距離で旋回、ときどき方向転換
+            ap.flyTimer+=delta;
+            if(ap.flyTimer>=ap.orbitDirTimer){
+                ap.orbitDir*=-1;
+                ap.flyTimer=0;
+                ap.orbitDirTimer=3+Math.random()*4;
+            }
+            ap.orbitAngle+=0.012*ap.orbitDir;
+            const tx=ufo.position.x+Math.cos(ap.orbitAngle)*100;
+            const tz=ufo.position.z+Math.sin(ap.orbitAngle)*100;
+            const ty=ufo.position.y-5+Math.sin(ap.flyTimer*0.4)*8;
+            ap.mesh.position.x+=(tx-ap.mesh.position.x)*0.04;
+            ap.mesh.position.y+=(ty-ap.mesh.position.y)*0.02;
+            ap.mesh.position.z+=(tz-ap.mesh.position.z)*0.04;
+            ap.mesh.lookAt(ufo.position);
+
+        } else if(ap.type==='fighter'){
+            // 戦闘機: 高速でUFOへ接近 → 通過 → 旋回を繰り返す
+            ap.flyTimer+=delta;
+            const spd=2.0; // 速い
+            if(ap.passState==='approach'){
+                // UFOへ向かって高速接近
+                ap.flyDir.set(dx,dy*0.3,dz).normalize();
+                ap.mesh.position.addScaledVector(ap.flyDir,spd);
+                // 機首を進行方向へ向ける
+                const lookTarget=ap.mesh.position.clone().add(ap.flyDir);
+                ap.mesh.lookAt(lookTarget);
+                if(dist<50){ap.passState='pass';ap.flyTimer=0;}
+            } else if(ap.passState==='pass'){
+                // 通過：そのまま直進
+                ap.mesh.position.addScaledVector(ap.flyDir,spd*1.5);
+                const lookTarget=ap.mesh.position.clone().add(ap.flyDir);
+                ap.mesh.lookAt(lookTarget);
+                if(ap.flyTimer>1.5){ap.passState='turn';ap.flyTimer=0;}
+            } else {
+                // 旋回してUFOへ再アプローチ
+                const toUfo=new THREE.Vector3(dx,dy*0.3,dz).normalize();
+                ap.flyDir.lerp(toUfo,0.02).normalize();
+                ap.mesh.position.addScaledVector(ap.flyDir,spd);
+                const lookTarget=ap.mesh.position.clone().add(ap.flyDir);
+                ap.mesh.lookAt(lookTarget);
+                if(ap.flyTimer>3.0){ap.passState='approach';ap.flyTimer=0;}
+            }
+
+        } else if(ap.type==='taikuho'){
+            // 対空砲: 地上固定、砲身をUFOに向けて回転
+            ap.mesh.lookAt(new THREE.Vector3(ufo.position.x,ap.mesh.position.y,ufo.position.z));
+        }
+
+        // 射撃タイマー（全タイプ共通）
+        ap.shootTimer-=delta;
+        if(ap.shootTimer<=0){
+            const shootInterval = ap.type==='fighter' ? 2.5+Math.random()*2.5
+                                 : ap.type==='taikuho' ? 3.5+Math.random()*2.0
+                                 : 3+Math.random()*2;
+            ap.shootTimer=shootInterval;
+
+            const damage = ap.type==='fighter' ? 15
+                          : ap.type==='taikuho' ? 12
+                          : 10;
+            // 戦闘機は接近時のみ射撃
+            if(ap.type==='fighter' && dist>120) { /* 遠すぎるときは撃たない */ }
+            else {
+                soundManager.playOnce('apacheAttack',0.75);
+                soundManager.playOnce('ufoHit',0.9);
+                ufoHP=Math.max(0,ufoHP-damage);
+                hpFill.style.width=ufoHP+'%';
+                if(ufoHP<=0){triggerGameOver();}
+                const origColor=bodyMat.emissive.getHex();
+                bodyMat.emissive.setHex(0xff0000);
+                setTimeout(()=>bodyMat.emissive.setHex(origColor),150);
+            }
+        }
+
+        // ヒットフラッシュ
+        if(ap.flashTimer>0){
+            ap.flashTimer-=delta;
+            ap.mesh.traverse(child=>{if(child.isMesh&&child.material)child.material.emissive.copy(_apacheHitColor);});
+        }else{
+            ap.mesh.traverse(child=>{if(child.isMesh&&child.material)child.material.emissive.copy(_apacheBaseColor);});
+        }
+
+        // 撃墜
+        if(ap.hp<=0){
+            soundManager.stopApacheSound(ap.mesh.uuid);
+            soundManager.playOnce('apacheExplosion',1.0);
+            createExplosion(ap.mesh.position.clone(),ap.type==='fighter'?2.2:1.8);
+            scene.remove(ap.mesh);
+            apaches.splice(i,1);
+        }
+    }
+
+    // ======================================================
+    // ターゲット更新
+    // ======================================================
+    for(let i=targets.length-1;i>=0;i--){
+        const t=targets[i];
+        const dx=t.mesh.position.x-ufo.position.x,dz=t.mesh.position.z-ufo.position.z;
+        const dist=Math.sqrt(dx*dx+dz*dz);
+
+        if(!isFastMode){
+            if(t.mesh.position.y<=0.1){
+                if(dist<t.fleeDist&&abductActive){
+                    const angle=Math.atan2(dx,dz);
+                    t.mesh.position.x+=Math.sin(angle)*t.speed*1.5;t.mesh.position.z+=Math.cos(angle)*t.speed*1.5;
+                    if(t.type==='human'||t.type==='car'||t.type==='truck'||t.type==='bus')t.mesh.rotation.y=Math.atan2(dx,dz);
+                }else{
+                    if(Math.random()<0.008)t.wanderDir=Math.random()*Math.PI*2;
+                    t.mesh.position.x+=Math.sin(t.wanderDir)*t.speed*0.25;t.mesh.position.z+=Math.cos(t.wanderDir)*t.speed*0.25;
+                    if(t.type==='human'||t.type==='deer'||t.type==='wolf'||t.type==='horse')t.mesh.rotation.y=t.wanderDir;
+                    if(t.type==='human'){t.mesh.children.forEach((c,ci)=>{if(ci<2)c.rotation.x=Math.sin(time*4+t.animPhase+ci)*0.2;});}
+                }
+            }
+        }
+
+        if(abductActive&&dist<6){
+            t.vy+=3.5/t.weight;if(t.vy>0.6)t.vy=0.6;
+            t.mesh.position.y+=t.vy;t.mesh.rotation.y+=0.06;t.mesh.rotation.x+=0.02;
+            if(t.mesh.position.y>ufo.position.y-2){
+                score+=t.score;abductCount++;
+                scoreEl.textContent=score;countEl.textContent=abductCount;
+                showNotif(t.title+'  +'+t.score);
+                soundManager.playOnce('pop', 1.0);
+                collected.push({title:t.title,icon:t.icon,score:t.score,type:t.type});
+                scene.remove(t.mesh);targets.splice(i,1);
+            }
+        }else if(t.mesh.position.y>0.05){
+            t.vy-=0.2;t.mesh.position.y+=t.vy;
+            if(t.mesh.position.y<=0.05){t.mesh.position.y=0.05;t.vy=0;t.mesh.rotation.x=0;}
+        }
+    }
+
+    buildingCollisionCooldown-=delta;
+    if(buildingCollisionCooldown<=0){
+        const UFO_RADIUS=6.5,uy=ufo.position.y;
+        for(const[,colliders]of buildingColliders){
+            for(const c of colliders){
+                const hw=c.w/2+UFO_RADIUS,hd=c.d/2+UFO_RADIUS;
+                const dx=Math.abs(ufo.position.x-c.wx),dz=Math.abs(ufo.position.z-c.wz);
+                if(dx<hw&&dz<hd&&uy<c.h+UFO_RADIUS){
+                    buildingCollisionCooldown=1.2;
+                    soundManager.playOnce('crash', 1.0);
+                    ufoHP=Math.max(0,ufoHP-8);hpFill.style.width=ufoHP+'%';
+                    if(ufoHP<=0){triggerGameOver();}
+                    const origEmissive=bodyMat.emissive.getHex();
+                    bodyMat.emissive.setHex(0xff0000);setTimeout(()=>bodyMat.emissive.setHex(origEmissive),200);
+                    const hitPt=new THREE.Vector3((ufo.position.x+c.wx)/2,Math.min(uy,c.h),(ufo.position.z+c.wz)/2);
+                    createExplosion(hitPt,1.0);
+                    triggerFlash();
+                    camShakeTimer=0.35;showNotif('IMPACT! -8 HP');break;
+                }
+            }
+        }
+    }
+
+    chunkUpdateTimer++;
+    if(chunkUpdateTimer>=(isFastMode?90:30)){chunkUpdateTimer=0;updateChunks();}
+
+    const curBiome=getBiome(ufo.position.x,ufo.position.z);
+    const bn=BIOME_NAMES[curBiome]||'WILDERNESS';
+    if(bn!==lastBiomeLabel){biomeLabel.textContent=bn;lastBiomeLabel=bn;}
+
+    if(camShakeTimer>0)camShakeTimer-=delta;
+    const camShake=camShakeTimer>0?(Math.random()-0.5)*4*camShakeTimer:0;
+    // ドッグファイトモード: 敵出現時にカメラを引いて水平視点へ遷移
+    const hasCombat=apaches.length>0;
+    dogfightCamT=THREE.MathUtils.lerp(dogfightCamT,hasCombat?1:0,0.025);
+    const camOffY=THREE.MathUtils.lerp(35,15,dogfightCamT);
+    const camOffZ=THREE.MathUtils.lerp(55,90,dogfightCamT);
+    const camLookOffY=THREE.MathUtils.lerp(-25,5,dogfightCamT);
+    camTarget.set(ufo.position.x+camShake,ufo.position.y+camOffY,ufo.position.z+camOffZ);
+    camLookTarget.set(ufo.position.x,ufo.position.y+camLookOffY,ufo.position.z);
+    camera.position.lerp(camTarget,0.08);
+    camLookTarget.lerp(ufo.position,0.1);
+    camera.lookAt(camLookTarget);
+
+    renderer.clear();
+    renderer.setViewport(0,0,window.innerWidth,window.innerHeight);
+    renderer.render(scene,camera);
+}
+
+window.addEventListener('resize',()=>{
+    camera.aspect=window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth,window.innerHeight);
+});
+
+updateChunks();
+animate();
+
+});
+</script>
+</body>
+</html>
