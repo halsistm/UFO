@@ -1509,19 +1509,19 @@ function _colorizeGLB(scene3d, type){
     loader.load('Helicopter.glb', gltf=>{
         _colorizeGLB(gltf.scene,'helicopter');
         // ヘリコプターのサイズをスケーリング
-        gltf.scene.scale.setScalar(1.5); // ヘリコプター: UFOより若干大きめ（ローター幅≈13.5units）
+        gltf.scene.scale.setScalar(0.4); // ヘリコプター
         _glbCache.helicopter=gltf.scene;
     }, undefined, err=>console.warn('[GLB] Helicopter load error:',err));
 
     loader.load('F22_shape_only_decimated.glb', gltf=>{
         _colorizeGLB(gltf.scene,'fighter');
-        gltf.scene.scale.setScalar(1.0); // 戦闘機: UFOより若干大きめ（約1.5ブロック相当）
+        gltf.scene.scale.setScalar(0.25); // 戦闘機
         _glbCache.fighter=gltf.scene;
     }, undefined, err=>console.warn('[GLB] F22 load error:',err));
 
     loader.load('taikuho.glb', gltf=>{
         _colorizeGLB(gltf.scene,'taikuho');
-        gltf.scene.scale.setScalar(0.5); // 対空砲: 地上設備・約1.5ブロック相当
+        gltf.scene.scale.setScalar(0.1); // 対空砲
         _glbCache.taikuho=gltf.scene;
     }, undefined, err=>console.warn('[GLB] taikuho load error:',err));
 })();
