@@ -60,6 +60,34 @@
             pointer-events: none; opacity: 0;
             letter-spacing: 3px;
         }
+        #military-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; opacity: 0; transition: opacity 0.8s;
+            box-shadow: inset 0 0 80px 30px rgba(255,80,0,0.55);
+            border: 3px solid rgba(255,80,0,0);
+            z-index: 9;
+        }
+        #military-overlay.active {
+            opacity: 1;
+            border-color: rgba(255,80,0,0.6);
+            animation: milFlicker 1.8s infinite;
+        }
+        @keyframes milFlicker {
+            0%,100%{box-shadow:inset 0 0 80px 30px rgba(255,80,0,0.55);}
+            50%{box-shadow:inset 0 0 100px 40px rgba(255,60,0,0.35);}
+        }
+        #military-banner {
+            position: fixed; top: 0; left: 0; width: 100%;
+            background: repeating-linear-gradient(
+                -45deg, rgba(255,80,0,0.7) 0px, rgba(255,80,0,0.7) 10px,
+                rgba(0,0,0,0.7) 10px, rgba(0,0,0,0.7) 20px
+            );
+            color: #fff; font-size: 13px; font-weight: bold; letter-spacing: 4px;
+            text-align: center; padding: 5px 0;
+            pointer-events: none; opacity: 0; transition: opacity 0.5s;
+            z-index: 10; text-shadow: 0 0 8px #ff4400;
+        }
+        #military-banner.active { opacity: 1; }
         /* ── タイトル画面（起動時 & ゲームオーバー後に表示）── */
         #title-screen {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -247,6 +275,8 @@
     </div>
     <div id="notification">+100</div>
     <div id="apache-warning">⚠ APACHE INCOMING ⚠</div>
+    <div id="military-overlay"></div>
+    <div id="military-banner">⚠ DANGER — RESTRICTED MILITARY AREA — UNAUTHORIZED AIRCRAFT WILL BE DESTROYED ⚠</div>
 </div>
 
 <!-- タイトル画面（起動時 & ゲームオーバー後） -->
@@ -475,11 +505,12 @@ const BLOCKS_PER_CHUNK = CHUNK_SIZE / BLOCK_SIZE;
 
 const BIOME = {
     OCEAN:0,BEACH:1,GRASSLAND:2,FARMLAND:3,FOREST:4,
-    MOUNTAIN:5,SUBURB:6,URBAN:7,INDUSTRIAL:8,RIVER:9,
+    MOUNTAIN:5,SUBURB:6,URBAN:7,INDUSTRIAL:8,RIVER:9,MILITARY:10,
 };
 const BIOME_NAMES = {
     0:'OCEAN',1:'BEACH',2:'GRASSLAND',3:'FARMLAND',
-    4:'FOREST',5:'MOUNTAIN',6:'SUBURB',7:'URBAN',8:'INDUSTRIAL',9:'RIVER'
+    4:'FOREST',5:'MOUNTAIN',6:'SUBURB',7:'URBAN',8:'INDUSTRIAL',9:'RIVER',
+    10:'⚠ MILITARY ZONE ⚠'
 };
 
 function hash(n){n=Math.sin(n)*43758.5453123;return n-Math.floor(n);}
@@ -494,7 +525,23 @@ function fbm(x,y,oct=4){
     for(let i=0;i<oct;i++){v+=noise2D(x*freq,y*freq)*amp;max+=amp;amp*=0.5;freq*=2;}
     return v/max;
 }
+// 軍事ゾーンのホットスポット: 約6チャンクごとのグリッドに15%の確率で基地を配置
+function getMilitaryHotspot(wx,wz){
+    const gridSize=CHUNK_SIZE*6;
+    const gx=Math.floor(wx/gridSize);
+    const gz=Math.floor(wz/gridSize);
+    const h=hash(gx*91+gz*173+7777);
+    if(h>0.82){
+        return{active:true,cx:(gx+0.5)*gridSize,cz:(gz+0.5)*gridSize,radius:CHUNK_SIZE*2.2};
+    }
+    return{active:false};
+}
 function getBiome(wx,wz){
+    const mil=getMilitaryHotspot(wx,wz);
+    if(mil.active){
+        const d=Math.sqrt((wx-mil.cx)**2+(wz-mil.cz)**2);
+        if(d<mil.radius)return BIOME.MILITARY;
+    }
     const scale=0.008;
     const h=fbm(wx*scale,wz*scale)+0.5;
     const moisture=fbm(wx*scale+100,wz*scale+200)+0.5;
@@ -518,6 +565,7 @@ const BIOME_COLORS = {
     [BIOME.FOREST]:    [0x0a1e06,0x071504],[BIOME.MOUNTAIN]:  [0x3a3a3a,0x484848],
     [BIOME.SUBURB]:    [0x1e1e16,0x181810],[BIOME.URBAN]:     [0x0e0e16,0x0a0a10],
     [BIOME.INDUSTRIAL]:[0x121208,0x0e0e06],[BIOME.RIVER]:     [0x081828,0x05101a],
+    [BIOME.MILITARY]:  [0x9e8a5a,0x8a7648],
 };
 
 // ======================================================
@@ -770,7 +818,7 @@ function spawnBiomeObjects(group,cx,cz){
     const spawnCount={
         [BIOME.FOREST]:10,[BIOME.GRASSLAND]:5,[BIOME.FARMLAND]:4,[BIOME.MOUNTAIN]:4,
         [BIOME.SUBURB]:6,[BIOME.URBAN]:7,[BIOME.INDUSTRIAL]:5,[BIOME.BEACH]:2,
-        [BIOME.OCEAN]:0,[BIOME.RIVER]:0,
+        [BIOME.OCEAN]:0,[BIOME.RIVER]:0,[BIOME.MILITARY]:8,
     }[biome]||0;
 
     const deciduousBatch=[],pineBatch=[],bushBatch=[];
@@ -864,6 +912,16 @@ function placeDecoration(group,biome,lx,lz,rng,deciduousBatch,pineBatch,bushBatc
         else{const ot=makeOilTank(rng);ot.position.set(lx,0,lz);group.add(ot);}
     }else if(biome===BIOME.BEACH){
         const palm=makePalmTree();palm.position.set(lx,0,lz);group.add(palm);
+    }else if(biome===BIOME.MILITARY){
+        const t=rng();
+        if(t<0.20){const b=makeBarracks();b.position.set(lx,0,lz);b.rotation.y=Math.floor(rng()*4)*Math.PI/2;group.add(b);}
+        else if(t<0.35){const h=makeHangar();h.position.set(lx,0,lz);h.rotation.y=Math.floor(rng()*2)*Math.PI/2;group.add(h);}
+        else if(t<0.45){const r=makeRadarTower();r.position.set(lx,0,lz);group.add(r);}
+        else if(t<0.58){const w=makeWatchtower();w.position.set(lx,0,lz);group.add(w);}
+        else if(t<0.68){const run=makeMilitaryRunway();run.position.set(lx,0,lz);run.rotation.y=rng()<0.5?0:Math.PI/2;group.add(run);}
+        else if(t<0.78){const sb=makeSandbagWall(8+Math.floor(rng()*10));sb.position.set(lx,0,lz);sb.rotation.y=rng()*Math.PI;group.add(sb);}
+        else if(t<0.88){const f=makeMilitaryFence(12+Math.floor(rng()*8));f.position.set(lx,0,lz);f.rotation.y=rng()<0.5?0:Math.PI/2;group.add(f);}
+        else{const tent=makeMilitaryTent();tent.position.set(lx,0,lz);tent.rotation.y=rng()*Math.PI*2;group.add(tent);}
     }
 }
 
@@ -875,6 +933,177 @@ function createRNG(seed){
 // ======================================================
 // 3D MODEL FACTORIES
 // ======================================================
+
+// ── 軍事基地施設 ──
+
+function makeBarracks(){
+    const g=new THREE.Group();
+    const wall=getMat(0x6b7c4a,0.9);
+    const roof=getMat(0x4a5530,0.85);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(18,4,7),wall);
+    body.position.y=2; g.add(body);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(18.5,0.6,7.5),roof);
+    top.position.y=4.3; g.add(top);
+    // ドア
+    const door=new THREE.Mesh(new THREE.BoxGeometry(1.4,2.4,0.1),getMat(0x2a2a1a,0.9));
+    door.position.set(0,1.2,3.55); g.add(door);
+    // 窓×4
+    for(let i=-1;i<=1;i+=2){
+        [-4,4].forEach(ox=>{
+            const win=new THREE.Mesh(new THREE.BoxGeometry(1.8,1.2,0.1),getMat(0x1a2a3a,0.1,0.6));
+            win.position.set(ox,2.5,i*3.55); g.add(win);
+        });
+    }
+    g.userData={isBuilding:true,bw:18,bd:7,bh:5};
+    return g;
+}
+
+function makeHangar(){
+    const g=new THREE.Group();
+    const wall=getMat(0x7a7060,0.85);
+    const roofMat=getMat(0x5a5448,0.8);
+    const base=new THREE.Mesh(new THREE.BoxGeometry(24,6,16),wall);
+    base.position.y=3; g.add(base);
+    // アーチ屋根（4段重ね）
+    for(let i=0;i<4;i++){
+        const r=new THREE.Mesh(new THREE.CylinderGeometry(8-i*0.8,8-i*0.8,24,12,1,false,0,Math.PI),roofMat);
+        r.rotation.z=Math.PI/2; r.position.y=6+i*0.4; g.add(r);
+    }
+    // 大型ドア
+    const door=new THREE.Mesh(new THREE.BoxGeometry(14,5.8,0.2),getMat(0x333325,0.9));
+    door.position.set(0,2.9,8.1); g.add(door);
+    // ドア枠
+    const frame=new THREE.Mesh(new THREE.BoxGeometry(14.6,6.2,0.15),getMat(0x55503a,0.85));
+    frame.position.set(0,3.1,8.0); g.add(frame);
+    g.userData={isBuilding:true,bw:24,bd:16,bh:12};
+    return g;
+}
+
+function makeRadarTower(){
+    const g=new THREE.Group();
+    const steel=getMat(0x4a4a40,0.7,0.5);
+    const dark=getMat(0x2a2a22,0.8);
+    // 脚部トラス
+    for(let i=0;i<4;i++){
+        const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.35,12,6),steel);
+        leg.position.set(Math.cos(i/4*Math.PI*2)*2.2,6,Math.sin(i/4*Math.PI*2)*2.2);
+        leg.rotation.z=Math.atan2(2.2,6)*0.8; g.add(leg);
+    }
+    const shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.5,14,8),steel);
+    shaft.position.y=7; g.add(shaft);
+    // レーダーディッシュ
+    const dish=new THREE.Mesh(new THREE.CylinderGeometry(0.1,3.5,1.2,12,1,false,0,Math.PI*2),getMat(0x556655,0.6,0.7));
+    dish.position.y=15; dish.rotation.x=Math.PI/4; g.add(dish);
+    const dishBack=new THREE.Mesh(new THREE.CylinderGeometry(3.5,3.5,0.3,12),dark);
+    dishBack.position.y=15.4; dishBack.rotation.x=Math.PI/4; g.add(dishBack);
+    const arm=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,1.5,6),steel);
+    arm.position.y=14.2; g.add(arm);
+    // 警告灯
+    const warn=new THREE.Mesh(new THREE.SphereGeometry(0.25,6,5),new THREE.MeshBasicMaterial({color:0xff3300}));
+    warn.position.y=16.5; g.add(warn);
+    g.userData={isBuilding:true,bw:5,bd:5,bh:17};
+    return g;
+}
+
+function makeWatchtower(){
+    const g=new THREE.Group();
+    const wood=getMat(0x5a4a2a,0.9);
+    const dark=getMat(0x3a3020,0.9);
+    // 4本脚
+    for(let i=0;i<4;i++){
+        const leg=new THREE.Mesh(new THREE.BoxGeometry(0.5,12,0.5),wood);
+        leg.position.set((i%2===0?-2.5:2.5),6,(i<2?-2.5:2.5)); g.add(leg);
+    }
+    // プラットフォーム
+    const platform=new THREE.Mesh(new THREE.BoxGeometry(7,0.5,7),wood);
+    platform.position.y=12; g.add(platform);
+    // 壁
+    for(let i=0;i<4;i++){
+        const wall=new THREE.Mesh(new THREE.BoxGeometry(i%2===0?7:0.4,2,i%2===0?0.4:7),dark);
+        wall.position.set(i%2===0?0:(i<2?-3.3:3.3),13.2,i%2===0?(i<2?-3.3:3.3):0);
+        g.add(wall);
+    }
+    // 屋根
+    const roof=new THREE.Mesh(new THREE.BoxGeometry(7.8,0.4,7.8),dark);
+    roof.position.y=14.5; g.add(roof);
+    // サーチライト
+    const light=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.8,1.0,8),getMat(0x888880,0.5,0.8));
+    light.position.set(1.5,14,1.5); light.rotation.x=0.4; g.add(light);
+    const lens=new THREE.Mesh(new THREE.CircleGeometry(0.5,8),new THREE.MeshBasicMaterial({color:0xffffaa}));
+    lens.position.set(1.5,14.5,1.9); g.add(lens);
+    g.userData={isBuilding:true,bw:7,bd:7,bh:15};
+    return g;
+}
+
+function makeMilitaryRunway(){
+    const g=new THREE.Group();
+    const asphalt=new THREE.Mesh(new THREE.PlaneGeometry(10,36),getMat(0x1a1a18,0.95));
+    asphalt.rotation.x=-Math.PI/2; asphalt.position.y=0.05; g.add(asphalt);
+    // センターライン
+    for(let i=-3;i<=3;i++){
+        const mark=new THREE.Mesh(new THREE.PlaneGeometry(0.5,3),new THREE.MeshBasicMaterial({color:0xcccc88}));
+        mark.rotation.x=-Math.PI/2; mark.position.set(0,0.06,i*5); g.add(mark);
+    }
+    // 端のしきり線
+    [-4.5,4.5].forEach(x=>{
+        const edge=new THREE.Mesh(new THREE.PlaneGeometry(0.3,36),new THREE.MeshBasicMaterial({color:0xffffff}));
+        edge.rotation.x=-Math.PI/2; edge.position.set(x,0.06,0); g.add(edge);
+    });
+    return g;
+}
+
+function makeSandbagWall(length=12){
+    const g=new THREE.Group();
+    const mat=getMat(0x8b7a50,0.95);
+    const count=Math.floor(length/1.6);
+    for(let i=0;i<count;i++){
+        const bag=new THREE.Mesh(new THREE.SphereGeometry(0.75,6,4),mat);
+        bag.scale.set(1,0.65,0.75);
+        bag.position.set(i*1.55-length/2+0.75,0.5,0); g.add(bag);
+        if(i%2===0){
+            const bag2=new THREE.Mesh(new THREE.SphereGeometry(0.7,6,4),mat);
+            bag2.scale.set(1,0.6,0.7);
+            bag2.position.set(i*1.55-length/2+1.5,1.3,0); g.add(bag2);
+        }
+    }
+    return g;
+}
+
+function makeMilitaryFence(length=16){
+    const g=new THREE.Group();
+    const post=getMat(0x555545,0.8,0.3);
+    const wire=getMat(0x444433,0.7,0.4);
+    const pCount=Math.ceil(length/4)+1;
+    for(let i=0;i<pCount;i++){
+        const p=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.12,3.5,6),post);
+        p.position.set(i*4-length/2,1.75,0); g.add(p);
+        // 有刺鉄線の代わりの横棒
+        if(i<pCount-1){
+            [1.2,2.2,3.1].forEach(wy=>{
+                const w=new THREE.Mesh(new THREE.BoxGeometry(4,0.06,0.06),wire);
+                w.position.set(i*4-length/2+2,wy,0); g.add(w);
+            });
+        }
+    }
+    // 上部の警告灯（両端）
+    const warnMat=new THREE.MeshBasicMaterial({color:0xff4400});
+    [0,1].forEach(i=>{
+        const warn=new THREE.Mesh(new THREE.SphereGeometry(0.18,6,4),warnMat);
+        warn.position.set(i===0?-length/2:length/2,3.8,0); g.add(warn);
+    });
+    return g;
+}
+
+function makeMilitaryTent(){
+    const g=new THREE.Group();
+    const canvas=getMat(0x5a6340,0.95);
+    const dark=getMat(0x3a4028,0.9);
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(0.2,5,6,3),canvas);
+    body.position.y=3; body.rotation.y=Math.PI/6; g.add(body);
+    const floor=new THREE.Mesh(new THREE.CylinderGeometry(4.8,4.8,0.2,3),dark);
+    floor.position.y=0.1; floor.rotation.y=Math.PI/6; g.add(floor);
+    return g;
+}
 
 function makePalmTree(){
     const g=new THREE.Group();
@@ -1280,13 +1509,13 @@ function _colorizeGLB(scene3d, type){
     loader.load('Helicopter.glb', gltf=>{
         _colorizeGLB(gltf.scene,'helicopter');
         // ヘリコプターのサイズをスケーリング
-        gltf.scene.scale.setScalar(2.0); // ヘリコプター: UFOより一回り小さい
+        gltf.scene.scale.setScalar(1.5); // ヘリコプター: UFOより若干大きめ（ローター幅≈13.5units）
         _glbCache.helicopter=gltf.scene;
     }, undefined, err=>console.warn('[GLB] Helicopter load error:',err));
 
     loader.load('F22_shape_only_decimated.glb', gltf=>{
         _colorizeGLB(gltf.scene,'fighter');
-        gltf.scene.scale.setScalar(2.5); // 戦闘機: ヘリより少し大きく精悍なサイズ
+        gltf.scene.scale.setScalar(1.0); // 戦闘機: UFOより若干大きめ（約1.5ブロック相当）
         _glbCache.fighter=gltf.scene;
     }, undefined, err=>console.warn('[GLB] F22 load error:',err));
 
@@ -1869,7 +2098,10 @@ for(let i=0;i<LED_TRAIL_POOL_SIZE;i++){
 // ======================================================
 const camTarget=new THREE.Vector3(0,40,55);
 const camLookTarget=new THREE.Vector3(0,30,0);
-let chunkUpdateTimer=0,camShakeTimer=0,moveStreak=0,currentSpeed=2.8;
+let chunkUpdateTimer=0,camShakeTimer=0,moveStreak=0,currentSpeed=2.8,dogfightCamT=0;
+let inMilitaryZone=false,militarySpawnTimer=0;
+const militaryOverlayEl=document.getElementById('military-overlay');
+const militaryBannerEl=document.getElementById('military-banner');
 let spaceUsed=false; // keys['_spaceUsed'] から分離
 const prevUfoPos=new THREE.Vector3(),ufoMoveDir=new THREE.Vector3(0,0,-1);
 const _streakQuat=new THREE.Quaternion(),_zAxis=new THREE.Vector3(0,0,1);
@@ -1898,10 +2130,9 @@ function animate(){
     const delta=0.016;
 
     const isMoving=keys['KeyW']||keys['KeyS']||keys['KeyA']||keys['KeyD']||keys['ArrowUp']||keys['ArrowDown']||keys['ArrowLeft']||keys['ArrowRight']||vStick.active;
-    // ワープ航法カウント: キーボードは常にmax、スティックは外周まで倒した状態(max)のみカウント
+    // ワープ航法カウント: キーボードは常にmax、スティックは触れている間カウント（手を離したらリセット）
     const isKeyboardMoving=keys['KeyW']||keys['KeyS']||keys['KeyA']||keys['KeyD']||keys['ArrowUp']||keys['ArrowDown']||keys['ArrowLeft']||keys['ArrowRight'];
-    const vStickMag=vStick.active?Math.sqrt(vStick.x*vStick.x+vStick.y*vStick.y):0;
-    const isFullThrottle=isKeyboardMoving||(vStick.active&&vStickMag>=0.85);
+    const isFullThrottle=isKeyboardMoving||vStick.active;
     if(isFullThrottle)moveStreak=Math.min(moveStreak+delta,3.5);
     else moveStreak=0;
     const boostT=Math.max(0,(moveStreak-1.2)/2.5);
@@ -2045,8 +2276,33 @@ function animate(){
 
     updateExplosions(delta);
 
+    // 通常スポーン
     apacheSpawnTimer+=delta;
     if(apacheSpawnTimer>=APACHE_SPAWN_INTERVAL){apacheSpawnTimer=0;spawnApache();}
+
+    // ── 軍事ゾーン判定 & 大量スポーン ──
+    const nowInMilitary=getBiome(ufo.position.x,ufo.position.z)===BIOME.MILITARY;
+    if(nowInMilitary!==inMilitaryZone){
+        inMilitaryZone=nowInMilitary;
+        militaryOverlayEl.classList.toggle('active',inMilitaryZone);
+        militaryBannerEl.classList.toggle('active',inMilitaryZone);
+        if(inMilitaryZone){
+            militarySpawnTimer=0;
+            // 侵入直後に3体同時スポーン
+            spawnHelicopter();spawnFighter();spawnTaikuho();
+            _showEnemyWarning('⚠ MILITARY ZONE — FORCES SCRAMBLED ⚠');
+        }
+    }
+    if(inMilitaryZone){
+        militarySpawnTimer+=delta;
+        if(militarySpawnTimer>=5){
+            militarySpawnTimer=0;
+            // 5秒ごとに2体スポーン
+            spawnApache();
+            if(Math.random()<0.6)spawnApache();
+        }
+    }
+
     if(apacheWarningTimer>0){apacheWarningTimer-=delta;apacheWarningEl.style.opacity=Math.min(1,apacheWarningTimer).toString();if(apacheWarningTimer<=0)apacheWarningEl.style.opacity='0';}
 
     for(let i=apaches.length-1;i>=0;i--){
@@ -2228,8 +2484,14 @@ function animate(){
 
     if(camShakeTimer>0)camShakeTimer-=delta;
     const camShake=camShakeTimer>0?(Math.random()-0.5)*4*camShakeTimer:0;
-    camTarget.set(ufo.position.x+camShake,ufo.position.y+35,ufo.position.z+55);
-    camLookTarget.set(ufo.position.x,ufo.position.y-25,ufo.position.z);
+    // ドッグファイトモード: 敵出現時にカメラを引いて水平視点へ遷移
+    const hasCombat=apaches.length>0;
+    dogfightCamT=THREE.MathUtils.lerp(dogfightCamT,hasCombat?1:0,0.025);
+    const camOffY=THREE.MathUtils.lerp(35,15,dogfightCamT);
+    const camOffZ=THREE.MathUtils.lerp(55,90,dogfightCamT);
+    const camLookOffY=THREE.MathUtils.lerp(-25,5,dogfightCamT);
+    camTarget.set(ufo.position.x+camShake,ufo.position.y+camOffY,ufo.position.z+camOffZ);
+    camLookTarget.set(ufo.position.x,ufo.position.y+camLookOffY,ufo.position.z);
     camera.position.lerp(camTarget,0.08);
     camLookTarget.lerp(ufo.position,0.1);
     camera.lookAt(camLookTarget);
