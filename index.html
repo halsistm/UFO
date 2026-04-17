@@ -2668,6 +2668,9 @@ function animate(){
         THREE.MathUtils.lerp(_fixedLookZ,_dogLookZ,dogfightCamT)
     );
     camera.position.lerp(camTarget,0.08);
+    // 通常時は北（ゲーム開始時の向き）を画面上に固定
+    // ドッグファイト移行後も up を world Y に保つことでロールを防ぐ
+    camera.up.set(0,1,0);
     camera.lookAt(camLookTarget);
 
     // B: 急旋回時FOV拡張 — ドッグファイト中のみ発動
