@@ -2630,29 +2630,50 @@ function animate(){
     // ドッグファイトモード: 敵出現時にカメラを引いて水平視点へ遷移
     const hasCombat=apaches.length>0;
     dogfightCamT=THREE.MathUtils.lerp(dogfightCamT,hasCombat?1:0,0.025);
-    // ドッグファイト時はカメラをほぼ同高・後方遠めにして水平視点を確保
-    const camOffY=THREE.MathUtils.lerp(35,5,dogfightCamT);
-    const camOffZ=THREE.MathUtils.lerp(55,110,dogfightCamT);
-    const camLookOffY=THREE.MathUtils.lerp(-25,-10,dogfightCamT);
 
-    // PANが解除されたらスナップバック
+    // PANが解除されたらスナップバック（ドッグファイト時のみ有効）
     if(camPan.id===null){camPan.yaw*=0.88;camPan.pitch*=0.88;}
 
-    // A: 進行方向先読みカメラ — UFO後方にオフセット、前方を注視 + PANオフセット
+    // ── A-1: 通常時カメラ — 俯瞰固定（進行方向に依存しない安定した真後ろ上方視点）
+    const _fixedCamX = ufo.position.x + camShake;
+    const _fixedCamY = ufo.position.y + 35;
+    const _fixedCamZ = ufo.position.z + 55;
+    const _fixedLookX = ufo.position.x;
+    const _fixedLookY = ufo.position.y - 25;
+    const _fixedLookZ = ufo.position.z;
+
+    // ── A-2: ドッグファイト時カメラ — 進行方向先読み + PAN
     const _panCos=Math.cos(camPan.yaw),_panSin=Math.sin(camPan.yaw);
-    const _rawBackX=-ufoMoveDir.x*camOffZ,_rawBackZ=-ufoMoveDir.z*camOffZ;
+    const _rawBackX=-ufoMoveDir.x*110,_rawBackZ=-ufoMoveDir.z*110;
     const camBackX=_rawBackX*_panCos-_rawBackZ*_panSin;
     const camBackZ=_rawBackX*_panSin+_rawBackZ*_panCos;
-    camTarget.set(ufo.position.x+camBackX+camShake, ufo.position.y+camOffY+camPan.pitch, ufo.position.z+camBackZ);
-    const leadDist=THREE.MathUtils.lerp(15,8,dogfightCamT);
-    camLookTarget.set(ufo.position.x+ufoMoveDir.x*leadDist, ufo.position.y+camLookOffY, ufo.position.z+ufoMoveDir.z*leadDist);
+    const _dogCamOffY=THREE.MathUtils.lerp(35,5,dogfightCamT);
+    const _dogLookOffY=THREE.MathUtils.lerp(-25,-10,dogfightCamT);
+    const _dogCamX = ufo.position.x+camBackX+camShake;
+    const _dogCamY = ufo.position.y+_dogCamOffY+camPan.pitch;
+    const _dogCamZ = ufo.position.z+camBackZ;
+    const _dogLookX = ufo.position.x+ufoMoveDir.x*8;
+    const _dogLookY = ufo.position.y+_dogLookOffY;
+    const _dogLookZ = ufo.position.z+ufoMoveDir.z*8;
+
+    // ── 通常 ⇔ ドッグファイト ブレンド
+    camTarget.set(
+        THREE.MathUtils.lerp(_fixedCamX,_dogCamX,dogfightCamT),
+        THREE.MathUtils.lerp(_fixedCamY,_dogCamY,dogfightCamT),
+        THREE.MathUtils.lerp(_fixedCamZ,_dogCamZ,dogfightCamT)
+    );
+    camLookTarget.set(
+        THREE.MathUtils.lerp(_fixedLookX,_dogLookX,dogfightCamT),
+        THREE.MathUtils.lerp(_fixedLookY,_dogLookY,dogfightCamT),
+        THREE.MathUtils.lerp(_fixedLookZ,_dogLookZ,dogfightCamT)
+    );
     camera.position.lerp(camTarget,0.08);
     camera.lookAt(camLookTarget);
 
-    // B: 急旋回時FOV拡張
-    if(isMoving){
+    // B: 急旋回時FOV拡張 — ドッグファイト中のみ発動
+    if(isMoving && dogfightCamT > 0.1){
         const dot=prevCamMoveDir.dot(ufoMoveDir);
-        if(dot<0.88) fovFlashTimer=0.45; // ~28°以上の方向転換で発動
+        if(dot<0.88) fovFlashTimer=0.45;
         prevCamMoveDir.copy(ufoMoveDir);
     }
     if(fovFlashTimer>0) fovFlashTimer-=delta;
