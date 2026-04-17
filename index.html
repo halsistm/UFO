@@ -276,6 +276,7 @@
 <!-- セキュリティ強化: 本番環境では integrity="sha384-<ハッシュ>" crossorigin="anonymous" を追加してください
      cdnjs.cloudflare.com の Three.js r128 ページからSRIハッシュを取得できます -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script>
 window.addEventListener('load', () => {
 
@@ -1183,11 +1184,13 @@ function fireAttackBeam(){
         if(nearest.hp<=0){
             soundManager.stopApacheSound(nearest.mesh.uuid);
             soundManager.playOnce('apacheExplosion', 1.0);
-            createExplosion(nearest.mesh.position.clone(),1.5);
+            createExplosion(nearest.mesh.position.clone(),nearest.type==='fighter'?2.2:1.5);
             scene.remove(nearest.mesh);
             apaches.splice(apaches.indexOf(nearest),1);
-            score+=5000;document.getElementById('score').textContent=score;
-            showNotif('APACHE DOWN! +5000');
+            const pts=nearest.type==='fighter'?8000:nearest.type==='taikuho'?3000:5000;
+            const label=nearest.type==='fighter'?'F-22 DOWN!':nearest.type==='taikuho'?'ANTI-AIR GUN DOWN!':'HELICOPTER DOWN!';
+            score+=pts;document.getElementById('score').textContent=score;
+            showNotif(`${label} +${pts}`);
         }else{nearest.flashTimer=0.2;}
     }else{
         targetPos=new THREE.Vector3(ufo.position.x,0,ufo.position.z-60);
@@ -1227,64 +1230,221 @@ function fireAttackBeam(){
 }
 
 // ======================================================
-// APACHE HELICOPTER
+// 敵ユニット システム（ヘリ / 戦闘機 / 対空砲）
 // ======================================================
 const apaches=[];
 let apacheSpawnTimer=0;
 const APACHE_SPAWN_INTERVAL=60;
 let ufoHP=100,apacheWarningTimer=0;
+const APACHE_MAX_DIST=450;
 
-const APACHE_MAX_DIST=400;
+// ── GLBモデルキャッシュ ──
+const _glbCache={helicopter:null,fighter:null,taikuho:null};
 
-function makeApacheModel(){
+function _colorizeGLB(scene3d, type){
+    let idx=0;
+    scene3d.traverse(child=>{
+        if(!child.isMesh) return;
+        let col, metal, rough, emissCol;
+        if(type==='helicopter'){
+            // 陸軍グリーン系
+            const palette=[0x3a5420,0x2d4a18,0x465e28,0x1e3010,0x304018];
+            col=palette[idx%palette.length];
+            metal=0.25; rough=0.82;
+            emissCol=new THREE.Color(col).multiplyScalar(0.18);
+        } else if(type==='fighter'){
+            // ステルスグレー / ダークブルーグレー
+            const palette=[0x2a3040,0x222838,0x303848,0x1a2030,0x3a4050];
+            col=palette[idx%palette.length];
+            metal=0.72; rough=0.28;
+            emissCol=new THREE.Color(0x050810);
+        } else {
+            // 対空砲: 砂漠カーキ / スチールグレー
+            const palette=[0x5a5a28,0x6a6030,0x484818,0x303020,0x7a7040];
+            col=palette[idx%palette.length];
+            metal=0.55; rough=0.68;
+            emissCol=new THREE.Color(0x080806);
+        }
+        const mat=new THREE.MeshStandardMaterial({
+            color:col, metalness:metal, roughness:rough,
+            emissive:emissCol, emissiveIntensity:1.0
+        });
+        child.material=mat;
+        idx++;
+    });
+}
+
+// 起動時にGLBをプリロード
+(function loadEnemyGLBs(){
+    const loader=new THREE.GLTFLoader();
+    loader.load('Helicopter.glb', gltf=>{
+        _colorizeGLB(gltf.scene,'helicopter');
+        // ヘリコプターのサイズをスケーリング
+        gltf.scene.scale.setScalar(3.5);
+        _glbCache.helicopter=gltf.scene;
+    }, undefined, err=>console.warn('[GLB] Helicopter load error:',err));
+
+    loader.load('F22_shape_only_decimated.glb', gltf=>{
+        _colorizeGLB(gltf.scene,'fighter');
+        gltf.scene.scale.setScalar(4.0);
+        _glbCache.fighter=gltf.scene;
+    }, undefined, err=>console.warn('[GLB] F22 load error:',err));
+
+    loader.load('taikuho.glb', gltf=>{
+        _colorizeGLB(gltf.scene,'taikuho');
+        gltf.scene.scale.setScalar(3.0);
+        _glbCache.taikuho=gltf.scene;
+    }, undefined, err=>console.warn('[GLB] taikuho load error:',err));
+})();
+
+// GLBモデルを複製してシーンに追加できる形にする
+function _instantiateGLB(type){
+    const src=_glbCache[type];
+    if(!src) return null;
+    const clone=src.clone(true);
+    // cloneでもmaterialを個別に複製して flash効果に対応
+    clone.traverse(c=>{
+        if(c.isMesh&&c.material){
+            c.material=c.material.clone();
+        }
+    });
+    return clone;
+}
+
+// ── ヘリコプター spawner ──
+function spawnHelicopter(){
+    const model=_instantiateGLB('helicopter');
+    if(!model) return;
+    const angle=Math.random()*Math.PI*2, dist=180+Math.random()*60;
+    const ax=ufo.position.x+Math.cos(angle)*dist;
+    const az=ufo.position.z+Math.sin(angle)*dist;
+    const ay=45+Math.random()*20;
+    model.position.set(ax,ay,az);
+    scene.add(model);
+
+    // ヘリのメインローター（Y軸回転）とテールローター（X軸回転）用グループを追加
+    const mainRotor=new THREE.Group();
+    const blade1=new THREE.Mesh(new THREE.BoxGeometry(9,0.12,0.5),new THREE.MeshStandardMaterial({color:0x1a3010,metalness:0.2,roughness:0.85}));
+    const blade2=new THREE.Mesh(new THREE.BoxGeometry(9,0.12,0.5),new THREE.MeshStandardMaterial({color:0x1a3010,metalness:0.2,roughness:0.85}));
+    blade2.rotation.y=Math.PI/2;
+    mainRotor.add(blade1,blade2);
+    mainRotor.position.set(0,2.5,0);
+    model.add(mainRotor);
+
+    const tailRotor=new THREE.Group();
+    const tb1=new THREE.Mesh(new THREE.BoxGeometry(0.12,2.2,0.28),new THREE.MeshStandardMaterial({color:0x1a3010,metalness:0.2,roughness:0.85}));
+    const tb2=new THREE.Mesh(new THREE.BoxGeometry(0.12,2.2,0.28),new THREE.MeshStandardMaterial({color:0x1a3010,metalness:0.2,roughness:0.85}));
+    tb2.rotation.x=Math.PI/2;
+    tailRotor.add(tb1,tb2);
+    tailRotor.position.set(-4.0,1.0,0.8);
+    model.add(tailRotor);
+
+    apaches.push({
+        mesh:model, type:'helicopter',
+        mainRotor, tailRotor,
+        hp:3, maxHp:3,
+        shootTimer:2+Math.random()*2, flashTimer:0,
+        flyDir:new THREE.Vector3(), flyTimer:0
+    });
+    soundManager.startApacheSound(model.uuid);
+    _showEnemyWarning('⚠ HELICOPTER INCOMING ⚠');
+}
+
+// ── 戦闘機 spawner ──
+function spawnFighter(){
+    const model=_instantiateGLB('fighter');
+    if(!model) return;
+    const angle=Math.random()*Math.PI*2, dist=220+Math.random()*80;
+    const ax=ufo.position.x+Math.cos(angle)*dist;
+    const az=ufo.position.z+Math.sin(angle)*dist;
+    const ay=58+Math.random()*18;
+    model.position.set(ax,ay,az);
+    // 先頭方向を揃える（F22はX軸方向が機首と仮定）
+    model.rotation.y=Math.random()*Math.PI*2;
+    scene.add(model);
+
+    // 初期飛行方向（UFOへ向かう）
+    const flyDir=new THREE.Vector3(
+        ufo.position.x-ax, 0, ufo.position.z-az
+    ).normalize();
+
+    apaches.push({
+        mesh:model, type:'fighter',
+        mainRotor:null, tailRotor:null,
+        hp:4, maxHp:4,
+        shootTimer:1.5+Math.random()*2, flashTimer:0,
+        flyDir, flyTimer:0,
+        passState:'approach' // 'approach' | 'pass' | 'turn'
+    });
+    soundManager.startApacheSound(model.uuid);
+    _showEnemyWarning('⚠ F-22 FIGHTER INCOMING ⚠');
+}
+
+// ── 対空砲 spawner ──
+function spawnTaikuho(){
+    const model=_instantiateGLB('taikuho');
+    if(!model) return;
+    const angle=Math.random()*Math.PI*2, dist=100+Math.random()*80;
+    const ax=ufo.position.x+Math.cos(angle)*dist;
+    const az=ufo.position.z+Math.sin(angle)*dist;
+    model.position.set(ax, 1.5, az);
+    scene.add(model);
+
+    apaches.push({
+        mesh:model, type:'taikuho',
+        mainRotor:null, tailRotor:null,
+        hp:2, maxHp:2,
+        shootTimer:2.5+Math.random()*2, flashTimer:0,
+        flyDir:new THREE.Vector3(), flyTimer:0
+    });
+    // 対空砲は音なし（砲声はshoot時のみ）
+    _showEnemyWarning('⚠ ANTI-AIR GUN DEPLOYED ⚠');
+}
+
+// 出現時の警告共通関数
+function _showEnemyWarning(msg){
+    apacheWarningTimer=3.0;
+    const el=document.getElementById('apache-warning');
+    el.textContent=msg;
+    el.style.opacity='1';
+}
+
+// ランダムにどれかを出現させる
+function spawnApache(){
+    const types=['helicopter','fighter','taikuho'];
+    const t=types[Math.floor(Math.random()*types.length)];
+    // GLBがまだロードされていない場合はヘリをプロシージャルで生成
+    if(!_glbCache[t]){
+        _spawnApacheProcedural();
+        return;
+    }
+    if(t==='helicopter') spawnHelicopter();
+    else if(t==='fighter') spawnFighter();
+    else spawnTaikuho();
+}
+
+// GLBロード前のフォールバック（プロシージャル）
+function _spawnApacheProcedural(){
     const g=new THREE.Group();
     const armyGreen=getMat(0x2d4a1e,0.8),darkGreen=getMat(0x1a2e12,0.85);
-    const cockpitMat=new THREE.MeshStandardMaterial({color:0x1a3028,transparent:true,opacity:0.75,metalness:0.3,roughness:0.2});
     const fuselage=new THREE.Mesh(new THREE.CylinderGeometry(1.0,0.7,8,10),armyGreen);
     fuselage.rotation.z=Math.PI/2;g.add(fuselage);
-    const cockpit=new THREE.Mesh(new THREE.SphereGeometry(1.4,12,8),cockpitMat);
-    cockpit.position.set(3.5,0.2,0);cockpit.scale.set(0.9,0.65,0.75);g.add(cockpit);
-    const gun=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.12,2,6),getMat(0x222222,0.8));
-    gun.rotation.z=Math.PI/2;gun.position.set(5.2,-0.5,0);g.add(gun);
     const tailBoom=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.7,5,8),armyGreen);
     tailBoom.rotation.z=Math.PI/2;tailBoom.position.set(-5.5,0.6,0);g.add(tailBoom);
     const fin=new THREE.Mesh(new THREE.BoxGeometry(0.2,2.2,1.2),darkGreen);
     fin.position.set(-7.8,1.4,0);g.add(fin);
-    const finH=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.2,0.8),darkGreen);
-    finH.position.set(-7.5,0.6,0);g.add(finH);
-    const rotorHub=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.4,8),getMat(0x333333,0.8));
-    rotorHub.position.set(0,1.3,0);g.add(rotorHub);
     const mainRotor=new THREE.Group();mainRotor.position.set(0,1.5,0);
     for(let i=0;i<2;i++){const blade=new THREE.Mesh(new THREE.BoxGeometry(9,0.1,0.55),darkGreen);blade.rotation.y=i*Math.PI/2;mainRotor.add(blade);}
     g.add(mainRotor);
     const tailRotor=new THREE.Group();tailRotor.position.set(-8.0,1.2,0.6);
-    for(let i=0;i<2;i++){const tblade=new THREE.Mesh(new THREE.BoxGeometry(0.1,2.0,0.25),darkGreen);tblade.rotation.x=i*Math.PI/2;tailRotor.add(tblade);}
+    for(let i=0;i<2;i++){const tb=new THREE.Mesh(new THREE.BoxGeometry(0.1,2.0,0.25),darkGreen);tb.rotation.x=i*Math.PI/2;tailRotor.add(tb);}
     g.add(tailRotor);
-    [-0.9,0.9].forEach(oz=>{
-        const pylon=new THREE.Mesh(new THREE.BoxGeometry(3.5,0.25,0.25),darkGreen);pylon.position.set(0.5,-1.0,oz);g.add(pylon);
-        const pod=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.45,0.5),getMat(0x444434,0.8));pod.position.set(2.0,-1.0,oz);g.add(pod);
-        [-0.15,0.15].forEach(mox=>{
-            const mis=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,1.0,6),getMat(0x556644,0.8));
-            mis.rotation.z=Math.PI/2;mis.position.set(2.6,-1.0,oz+mox);g.add(mis);
-        });
-    });
-    [-1.5,1.5].forEach(oz=>{
-        const gear=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,2.5,6),getMat(0x333333,0.9));
-        gear.rotation.z=Math.PI/2;gear.position.set(0,-1.5,oz);g.add(gear);
-    });
-    return{mesh:g,mainRotor,tailRotor};
-}
-
-function spawnApache(){
-    const angle=Math.random()*Math.PI*2,dist=180+Math.random()*60;
-    const ax=ufo.position.x+Math.cos(angle)*dist,az=ufo.position.z+Math.sin(angle)*dist,ay=45+Math.random()*20;
-    const apacheObj=makeApacheModel();
-    apacheObj.mesh.position.set(ax,ay,az);
-    scene.add(apacheObj.mesh);
-    apaches.push({mesh:apacheObj.mesh,mainRotor:apacheObj.mainRotor,tailRotor:apacheObj.tailRotor,hp:3,shootTimer:2+Math.random()*2,flashTimer:0});
-    soundManager.startApacheSound(apacheObj.mesh.uuid);
-    apacheWarningTimer=3.0;
-    document.getElementById('apache-warning').style.opacity='1';
+    const angle=Math.random()*Math.PI*2, dist=180+Math.random()*60;
+    g.position.set(ufo.position.x+Math.cos(angle)*dist, 45+Math.random()*20, ufo.position.z+Math.sin(angle)*dist);
+    scene.add(g);
+    apaches.push({mesh:g,type:'helicopter',mainRotor,tailRotor,hp:3,maxHp:3,shootTimer:2+Math.random()*2,flashTimer:0,flyDir:new THREE.Vector3(),flyTimer:0});
+    soundManager.startApacheSound(g.uuid);
+    _showEnemyWarning('⚠ HELICOPTER INCOMING ⚠');
 }
 
 // ======================================================
@@ -1738,7 +1898,11 @@ function animate(){
     const delta=0.016;
 
     const isMoving=keys['KeyW']||keys['KeyS']||keys['KeyA']||keys['KeyD']||keys['ArrowUp']||keys['ArrowDown']||keys['ArrowLeft']||keys['ArrowRight']||vStick.active;
-    if(isMoving)moveStreak=Math.min(moveStreak+delta,3.5);
+    // ワープ航法カウント: キーボードは常にmax、スティックは外周まで倒した状態(max)のみカウント
+    const isKeyboardMoving=keys['KeyW']||keys['KeyS']||keys['KeyA']||keys['KeyD']||keys['ArrowUp']||keys['ArrowDown']||keys['ArrowLeft']||keys['ArrowRight'];
+    const vStickMag=vStick.active?Math.sqrt(vStick.x*vStick.x+vStick.y*vStick.y):0;
+    const isFullThrottle=isKeyboardMoving||(vStick.active&&vStickMag>=0.85);
+    if(isFullThrottle)moveStreak=Math.min(moveStreak+delta,3.5);
     else moveStreak=0;
     const boostT=Math.max(0,(moveStreak-1.2)/2.5);
     const boostFactor=boostT*boostT;
@@ -1887,39 +2051,108 @@ function animate(){
 
     for(let i=apaches.length-1;i>=0;i--){
         const ap=apaches[i];
-        ap.mainRotor.rotation.y+=0.35;ap.tailRotor.rotation.x+=0.4;
-        const dx=ufo.position.x-ap.mesh.position.x,dy=ufo.position.y-ap.mesh.position.y,dz=ufo.position.z-ap.mesh.position.z;
+
+        // ローター回転（ヘリのみ）
+        if(ap.mainRotor) ap.mainRotor.rotation.y+=0.45;
+        if(ap.tailRotor) ap.tailRotor.rotation.x+=0.5;
+
+        const dx=ufo.position.x-ap.mesh.position.x;
+        const dy=ufo.position.y-ap.mesh.position.y;
+        const dz=ufo.position.z-ap.mesh.position.z;
         const dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
 
-        if(dist>APACHE_MAX_DIST){
+        // 距離超過で削除（対空砲は判定を緩める）
+        const maxDist=ap.type==='taikuho'?350:APACHE_MAX_DIST;
+        if(dist>maxDist){
             soundManager.stopApacheSound(ap.mesh.uuid);
             scene.remove(ap.mesh);
             apaches.splice(i,1);
             continue;
         }
 
-        if(dist>35){ap.mesh.position.x+=dx/dist*0.55;ap.mesh.position.y+=dy/dist*0.2;ap.mesh.position.z+=dz/dist*0.55;}
-        ap.mesh.lookAt(ufo.position);
+        // ── タイプ別挙動 ──
+        if(ap.type==='helicopter'){
+            // ヘリ: UFOをゆっくり追尾
+            if(dist>35){
+                ap.mesh.position.x+=dx/dist*0.55;
+                ap.mesh.position.y+=dy/dist*0.2;
+                ap.mesh.position.z+=dz/dist*0.55;
+            }
+            ap.mesh.lookAt(ufo.position);
+
+        } else if(ap.type==='fighter'){
+            // 戦闘機: 高速でUFOへ接近 → 通過 → 旋回を繰り返す
+            ap.flyTimer+=delta;
+            const spd=2.0; // 速い
+            if(ap.passState==='approach'){
+                // UFOへ向かって高速接近
+                ap.flyDir.set(dx,dy*0.3,dz).normalize();
+                ap.mesh.position.addScaledVector(ap.flyDir,spd);
+                // 機首を進行方向へ向ける
+                const lookTarget=ap.mesh.position.clone().add(ap.flyDir);
+                ap.mesh.lookAt(lookTarget);
+                if(dist<50){ap.passState='pass';ap.flyTimer=0;}
+            } else if(ap.passState==='pass'){
+                // 通過：そのまま直進
+                ap.mesh.position.addScaledVector(ap.flyDir,spd*1.5);
+                const lookTarget=ap.mesh.position.clone().add(ap.flyDir);
+                ap.mesh.lookAt(lookTarget);
+                if(ap.flyTimer>1.5){ap.passState='turn';ap.flyTimer=0;}
+            } else {
+                // 旋回してUFOへ再アプローチ
+                const toUfo=new THREE.Vector3(dx,dy*0.3,dz).normalize();
+                ap.flyDir.lerp(toUfo,0.02).normalize();
+                ap.mesh.position.addScaledVector(ap.flyDir,spd);
+                const lookTarget=ap.mesh.position.clone().add(ap.flyDir);
+                ap.mesh.lookAt(lookTarget);
+                if(ap.flyTimer>3.0){ap.passState='approach';ap.flyTimer=0;}
+            }
+
+        } else if(ap.type==='taikuho'){
+            // 対空砲: 地上固定、砲身をUFOに向けて回転
+            ap.mesh.lookAt(new THREE.Vector3(ufo.position.x,ap.mesh.position.y,ufo.position.z));
+        }
+
+        // 射撃タイマー（全タイプ共通）
         ap.shootTimer-=delta;
         if(ap.shootTimer<=0){
-            ap.shootTimer=3+Math.random()*2;
-            soundManager.playOnce('apacheAttack', 0.75);
-            soundManager.playOnce('ufoHit', 0.9);
-            ufoHP=Math.max(0,ufoHP-10);hpFill.style.width=ufoHP+'%';
-            if(ufoHP<=0){triggerGameOver();}
-            const origColor=bodyMat.emissive.getHex();
-            bodyMat.emissive.setHex(0xff0000);setTimeout(()=>bodyMat.emissive.setHex(origColor),150);
+            const shootInterval = ap.type==='fighter' ? 2.5+Math.random()*2.5
+                                 : ap.type==='taikuho' ? 3.5+Math.random()*2.0
+                                 : 3+Math.random()*2;
+            ap.shootTimer=shootInterval;
+
+            const damage = ap.type==='fighter' ? 15
+                          : ap.type==='taikuho' ? 12
+                          : 10;
+            // 戦闘機は接近時のみ射撃
+            if(ap.type==='fighter' && dist>120) { /* 遠すぎるときは撃たない */ }
+            else {
+                soundManager.playOnce('apacheAttack',0.75);
+                soundManager.playOnce('ufoHit',0.9);
+                ufoHP=Math.max(0,ufoHP-damage);
+                hpFill.style.width=ufoHP+'%';
+                if(ufoHP<=0){triggerGameOver();}
+                const origColor=bodyMat.emissive.getHex();
+                bodyMat.emissive.setHex(0xff0000);
+                setTimeout(()=>bodyMat.emissive.setHex(origColor),150);
+            }
         }
+
+        // ヒットフラッシュ
         if(ap.flashTimer>0){
             ap.flashTimer-=delta;
             ap.mesh.traverse(child=>{if(child.isMesh&&child.material)child.material.emissive.copy(_apacheHitColor);});
         }else{
             ap.mesh.traverse(child=>{if(child.isMesh&&child.material)child.material.emissive.copy(_apacheBaseColor);});
         }
+
+        // 撃墜
         if(ap.hp<=0){
             soundManager.stopApacheSound(ap.mesh.uuid);
-            soundManager.playOnce('apacheExplosion', 1.0);
-            createExplosion(ap.mesh.position.clone(),1.8);scene.remove(ap.mesh);apaches.splice(i,1);
+            soundManager.playOnce('apacheExplosion',1.0);
+            createExplosion(ap.mesh.position.clone(),ap.type==='fighter'?2.2:1.8);
+            scene.remove(ap.mesh);
+            apaches.splice(i,1);
         }
     }
 
