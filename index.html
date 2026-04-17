@@ -60,6 +60,18 @@
             pointer-events: none; opacity: 0;
             letter-spacing: 3px;
         }
+        #lock-warning {
+            position: fixed; top: 78px; left: 50%; transform: translateX(-50%);
+            color: #ff2200; font-size: 18px; font-weight: bold;
+            text-shadow: 0 0 12px #ff4400;
+            pointer-events: none; opacity: 0; transition: opacity 0.08s;
+            letter-spacing: 2px; z-index: 100;
+            animation: lockPulse 0.35s infinite alternate;
+        }
+        @keyframes lockPulse {
+            from { text-shadow: 0 0 8px #ff2200; }
+            to   { text-shadow: 0 0 28px #ff4400, 0 0 55px rgba(255,60,0,0.5); }
+        }
         #military-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none; opacity: 0; transition: opacity 0.8s;
@@ -275,6 +287,7 @@
     </div>
     <div id="notification">+100</div>
     <div id="apache-warning">⚠ APACHE INCOMING ⚠</div>
+    <div id="lock-warning">⚠ MISSILE LOCK ⚠</div>
     <div id="military-overlay"></div>
     <div id="military-banner">⚠ DANGER — RESTRICTED MILITARY AREA — UNAUTHORIZED AIRCRAFT WILL BE DESTROYED ⚠</div>
 </div>
@@ -1397,14 +1410,27 @@ scene.add(attackBeamGroup);
 let attackBeamTimer=0,attackCooldown=0;
 const _atkDir=new THREE.Vector3(),_atkMid=new THREE.Vector3(),_yAxis=new THREE.Vector3(0,1,0);
 
+// 敵弾システム
+const enemyBullets=[];
+const _eBulletGeo=new THREE.SphereGeometry(1.5,6,6);
+const _eBulletMatHeli=new THREE.MeshBasicMaterial({color:0xff6600});
+const _eBulletMatFighter=new THREE.MeshBasicMaterial({color:0xffee22});
+const _eBulletMatTaikuho=new THREE.MeshBasicMaterial({color:0xff3300});
+const lockWarningEl=document.getElementById('lock-warning');
+
 function fireAttackBeam(){
     if(attackCooldown>0)return;
     attackCooldown=0.8; attackBeamTimer=0.3;
     soundManager.playOnce('attackBeam', 0.85);
+    // 進行方向の前方コーン(40°)内の最近傍敵のみ狙う
+    const CONE_COS=0.766;
     let nearest=null,nearestDist=Infinity;
     apaches.forEach(ap=>{
         const d=ufo.position.distanceTo(ap.mesh.position);
-        if(d<nearestDist){nearestDist=d;nearest=ap;}
+        if(d<300){
+            const toEnemy=new THREE.Vector3().subVectors(ap.mesh.position,ufo.position).normalize();
+            if(ufoMoveDir.dot(toEnemy)>CONE_COS && d<nearestDist){nearestDist=d;nearest=ap;}
+        }
     });
     let targetPos;
     if(nearest&&nearestDist<300){
@@ -1574,7 +1600,8 @@ function spawnHelicopter(){
         hp:3, maxHp:3,
         shootTimer:2+Math.random()*2, flashTimer:0,
         flyDir:new THREE.Vector3(), flyTimer:0,
-        orbitAngle:angle, orbitDir:Math.random()<0.5?1:-1, orbitDirTimer:3+Math.random()*4
+        orbitAngle:angle, orbitDir:Math.random()<0.5?1:-1,
+        passState:'orbit', orbitTime:5+Math.random()*3, currentBank:0, lockTimer:0
     });
     soundManager.startApacheSound(model.uuid);
     _showEnemyWarning('⚠ HELICOPTER INCOMING ⚠');
@@ -1604,7 +1631,7 @@ function spawnFighter(){
         hp:4, maxHp:4,
         shootTimer:1.5+Math.random()*2, flashTimer:0,
         flyDir, flyTimer:0,
-        passState:'approach' // 'approach' | 'pass' | 'turn'
+        passState:'approach', lockTimer:0 // 'approach' | 'pass' | 'turn'
     });
     soundManager.startApacheSound(model.uuid);
     _showEnemyWarning('⚠ F-22 FIGHTER INCOMING ⚠');
@@ -1625,7 +1652,7 @@ function spawnTaikuho(){
         mainRotor:null, tailRotor:null,
         hp:2, maxHp:2,
         shootTimer:2.5+Math.random()*2, flashTimer:0,
-        flyDir:new THREE.Vector3(), flyTimer:0
+        flyDir:new THREE.Vector3(), flyTimer:0, lockTimer:0
     });
     // 対空砲は音なし（砲声はshoot時のみ）
     _showEnemyWarning('⚠ ANTI-AIR GUN DEPLOYED ⚠');
@@ -1672,7 +1699,7 @@ function _spawnApacheProcedural(){
     const angle=Math.random()*Math.PI*2, dist=180+Math.random()*60;
     g.position.set(ufo.position.x+Math.cos(angle)*dist, 45+Math.random()*20, ufo.position.z+Math.sin(angle)*dist);
     scene.add(g);
-    apaches.push({mesh:g,type:'helicopter',mainRotor,tailRotor,hp:3,maxHp:3,shootTimer:2+Math.random()*2,flashTimer:0,flyDir:new THREE.Vector3(),flyTimer:0,orbitAngle:angle,orbitDir:Math.random()<0.5?1:-1,orbitDirTimer:3+Math.random()*4});
+    apaches.push({mesh:g,type:'helicopter',mainRotor,tailRotor,hp:3,maxHp:3,shootTimer:2+Math.random()*2,flashTimer:0,flyDir:new THREE.Vector3(),flyTimer:0,orbitAngle:angle,orbitDir:Math.random()<0.5?1:-1,passState:'orbit',orbitTime:5+Math.random()*3,currentBank:0,lockTimer:0});
     soundManager.startApacheSound(g.uuid);
     _showEnemyWarning('⚠ HELICOPTER INCOMING ⚠');
 }
@@ -2099,7 +2126,8 @@ for(let i=0;i<LED_TRAIL_POOL_SIZE;i++){
 // ======================================================
 const camTarget=new THREE.Vector3(0,40,55);
 const camLookTarget=new THREE.Vector3(0,30,0);
-let chunkUpdateTimer=0,camShakeTimer=0,moveStreak=0,currentSpeed=2.8,dogfightCamT=0;
+const prevCamMoveDir=new THREE.Vector3(0,0,-1);
+let chunkUpdateTimer=0,camShakeTimer=0,moveStreak=0,currentSpeed=2.8,dogfightCamT=0,fovFlashTimer=0;
 let inMilitaryZone=false,militarySpawnTimer=0;
 const militaryOverlayEl=document.getElementById('military-overlay');
 const militaryBannerEl=document.getElementById('military-banner');
@@ -2306,6 +2334,26 @@ function animate(){
 
     if(apacheWarningTimer>0){apacheWarningTimer-=delta;apacheWarningEl.style.opacity=Math.min(1,apacheWarningTimer).toString();if(apacheWarningTimer<=0)apacheWarningEl.style.opacity='0';}
 
+    // 敵弾 更新
+    for(let i=enemyBullets.length-1;i>=0;i--){
+        const b=enemyBullets[i];
+        b.mesh.position.add(b.velocity);
+        b.life--;
+        if(b.life<=0){scene.remove(b.mesh);enemyBullets.splice(i,1);continue;}
+        if(b.mesh.position.distanceTo(ufo.position)<12){
+            soundManager.playOnce('ufoHit',0.9);
+            ufoHP=Math.max(0,ufoHP-b.damage);
+            hpFill.style.width=ufoHP+'%';
+            if(ufoHP<=0){triggerGameOver();}
+            const origColor=bodyMat.emissive.getHex();
+            bodyMat.emissive.setHex(0xff0000);
+            setTimeout(()=>bodyMat.emissive.setHex(origColor),150);
+            scene.remove(b.mesh);enemyBullets.splice(i,1);
+        }
+    }
+    // ロックオン警告UI
+    lockWarningEl.style.opacity=apaches.some(ap=>ap.lockTimer>0)?'1':'0';
+
     for(let i=apaches.length-1;i>=0;i--){
         const ap=apaches[i];
 
@@ -2380,26 +2428,26 @@ function animate(){
 
         // 射撃タイマー（全タイプ共通）
         ap.shootTimer-=delta;
+        // ロックオン警告: 発射 0.9秒前に表示
+        ap.lockTimer=(ap.shootTimer>0 && ap.shootTimer<0.9)?ap.shootTimer:0;
         if(ap.shootTimer<=0){
             const shootInterval = ap.type==='fighter' ? 2.5+Math.random()*2.5
                                  : ap.type==='taikuho' ? 3.5+Math.random()*2.0
                                  : 3+Math.random()*2;
             ap.shootTimer=shootInterval;
-
-            const damage = ap.type==='fighter' ? 15
-                          : ap.type==='taikuho' ? 12
-                          : 10;
+            ap.lockTimer=0;
             // 戦闘機は接近時のみ射撃
-            if(ap.type==='fighter' && dist>120) { /* 遠すぎるときは撃たない */ }
-            else {
+            if(!(ap.type==='fighter' && dist>120)){
                 soundManager.playOnce('apacheAttack',0.75);
-                soundManager.playOnce('ufoHit',0.9);
-                ufoHP=Math.max(0,ufoHP-damage);
-                hpFill.style.width=ufoHP+'%';
-                if(ufoHP<=0){triggerGameOver();}
-                const origColor=bodyMat.emissive.getHex();
-                bodyMat.emissive.setHex(0xff0000);
-                setTimeout(()=>bodyMat.emissive.setHex(origColor),150);
+                // 弾を生成してUFOの現在位置へ発射（ホーミングなし）
+                const bMat=ap.type==='fighter'?_eBulletMatFighter:ap.type==='taikuho'?_eBulletMatTaikuho:_eBulletMatHeli;
+                const bMesh=new THREE.Mesh(_eBulletGeo,bMat);
+                bMesh.position.copy(ap.mesh.position);
+                const bSpd=ap.type==='fighter'?11:ap.type==='taikuho'?5:7;
+                const bDmg=ap.type==='fighter'?15:ap.type==='taikuho'?12:10;
+                const vel=new THREE.Vector3().subVectors(ufo.position,ap.mesh.position).normalize().multiplyScalar(bSpd);
+                scene.add(bMesh);
+                enemyBullets.push({mesh:bMesh,velocity:vel,damage:bDmg,life:90});
             }
         }
 
@@ -2499,11 +2547,26 @@ function animate(){
     const camOffY=THREE.MathUtils.lerp(35,15,dogfightCamT);
     const camOffZ=THREE.MathUtils.lerp(55,90,dogfightCamT);
     const camLookOffY=THREE.MathUtils.lerp(-25,5,dogfightCamT);
-    camTarget.set(ufo.position.x+camShake,ufo.position.y+camOffY,ufo.position.z+camOffZ);
-    camLookTarget.set(ufo.position.x,ufo.position.y+camLookOffY,ufo.position.z);
+
+    // A: 進行方向先読みカメラ — UFO後方にオフセット、前方を注視
+    const camBackX=-ufoMoveDir.x*camOffZ;
+    const camBackZ=-ufoMoveDir.z*camOffZ;
+    camTarget.set(ufo.position.x+camBackX+camShake, ufo.position.y+camOffY, ufo.position.z+camBackZ);
+    const leadDist=THREE.MathUtils.lerp(15,8,dogfightCamT);
+    camLookTarget.set(ufo.position.x+ufoMoveDir.x*leadDist, ufo.position.y+camLookOffY, ufo.position.z+ufoMoveDir.z*leadDist);
     camera.position.lerp(camTarget,0.08);
-    camLookTarget.lerp(ufo.position,0.1);
     camera.lookAt(camLookTarget);
+
+    // B: 急旋回時FOV拡張
+    if(isMoving){
+        const dot=prevCamMoveDir.dot(ufoMoveDir);
+        if(dot<0.88) fovFlashTimer=0.45; // ~28°以上の方向転換で発動
+        prevCamMoveDir.copy(ufoMoveDir);
+    }
+    if(fovFlashTimer>0) fovFlashTimer-=delta;
+    const fovTarget=fovFlashTimer>0 ? THREE.MathUtils.lerp(55,88,Math.min(1,fovFlashTimer*4)) : 55;
+    camera.fov=THREE.MathUtils.lerp(camera.fov,fovTarget,0.18);
+    camera.updateProjectionMatrix();
 
     renderer.clear();
     renderer.setViewport(0,0,window.innerWidth,window.innerHeight);
