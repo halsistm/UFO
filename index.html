@@ -262,6 +262,37 @@
             text-shadow: 0 0 8px #ff8800;
             opacity: 0; transition: opacity 0.2s;
         }
+        #aim-ring {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 130px; height: 130px;
+            border: 3px solid rgba(0,255,136,0.55);
+            border-radius: 50%;
+            pointer-events: none; opacity: 0;
+            transition: opacity 0.25s, border-color 0.15s, box-shadow 0.15s;
+            box-shadow: 0 0 18px rgba(0,255,136,0.25), inset 0 0 18px rgba(0,255,136,0.1);
+        }
+        #aim-ring::before, #aim-ring::after {
+            content: ''; position: absolute;
+            background: rgba(0,255,136,0.6);
+        }
+        #aim-ring::before {
+            width: 2px; height: 18px;
+            top: 50%; left: 50%; transform: translate(-50%,-50%);
+        }
+        #aim-ring::after {
+            width: 18px; height: 2px;
+            top: 50%; left: 50%; transform: translate(-50%,-50%);
+        }
+        #aim-ring.locked {
+            border-color: rgba(255,50,50,0.9);
+            box-shadow: 0 0 28px rgba(255,50,50,0.5), inset 0 0 18px rgba(255,50,50,0.15);
+            animation: aimPulse 0.35s infinite alternate;
+        }
+        @keyframes aimPulse {
+            from { transform: translate(-50%,-50%) scale(1); }
+            to   { transform: translate(-50%,-50%) scale(1.08); }
+        }
     </style>
 </head>
 <body>
@@ -285,6 +316,7 @@
     <div id="virtual-stick-container">
         <div id="stick-base"><div id="stick-knob"></div></div>
     </div>
+    <div id="aim-ring"></div>
     <div id="notification">+100</div>
     <div id="apache-warning">⚠ APACHE INCOMING ⚠</div>
     <div id="lock-warning">⚠ MISSILE LOCK ⚠</div>
@@ -366,6 +398,8 @@ class SoundManager {
             apacheExplosion:   '490266__anomaex__sci-fi_explosion_2.mp3',
             ufoHit:            '456272__soundfxstudio__distance-explosion-sound.mp3',
             pop:               'pop.mp3',
+            missilelock:       'f18locked_launched.mp3',
+            bulletFlyby:       'kauasilbershlachparodes-bullet-train-493988.mp3',
         };
 
         await Promise.all(Object.entries(files).map(async ([key, file]) => {
@@ -1417,13 +1451,15 @@ const _eBulletMatHeli=new THREE.MeshBasicMaterial({color:0xff6600});
 const _eBulletMatFighter=new THREE.MeshBasicMaterial({color:0xffee22});
 const _eBulletMatTaikuho=new THREE.MeshBasicMaterial({color:0xff3300});
 const lockWarningEl=document.getElementById('lock-warning');
+const aimRingEl=document.getElementById('aim-ring');
+let _lockSoundPlayed=false;
 
 function fireAttackBeam(){
     if(attackCooldown>0)return;
     attackCooldown=0.8; attackBeamTimer=0.3;
     soundManager.playOnce('attackBeam', 0.85);
-    // 進行方向の前方コーン(40°)内の最近傍敵のみ狙う
-    const CONE_COS=0.766;
+    // オートエイム: 広めのコーン(65°ハーフ角)内の最近傍敵を狙う
+    const CONE_COS=0.42;
     let nearest=null,nearestDist=Infinity;
     apaches.forEach(ap=>{
         const d=ufo.position.distanceTo(ap.mesh.position);
@@ -2085,6 +2121,32 @@ stickBase.addEventListener('touchend',e=>{e.preventDefault();resetStick();},{pas
 stickBase.addEventListener('touchcancel',e=>{e.preventDefault();resetStick();},{passive:false});
 window.addEventListener('keydown',e=>keys[e.code]=true);
 window.addEventListener('keyup',e=>{keys[e.code]=false;if(e.code==='Space')spaceUsed=false;});
+
+// カメラPAN（右側スワイプ）
+const camPan={yaw:0,pitch:0,id:null,startX:0,startY:0};
+const PAN_YAW_SCALE=0.007, PAN_PITCH_SCALE=0.12, PAN_YAW_MAX=Math.PI*0.55, PAN_PITCH_MAX=22;
+window.addEventListener('touchstart',e=>{
+    for(const t of e.changedTouches){
+        if(t.identifier===vStick.id) continue;
+        const stickRect=stickBase.getBoundingClientRect();
+        const inStick=t.clientX>=stickRect.left-20&&t.clientX<=stickRect.right+20&&t.clientY>=stickRect.top-20&&t.clientY<=stickRect.bottom+20;
+        if(!inStick&&camPan.id===null){camPan.id=t.identifier;camPan.startX=t.clientX;camPan.startY=t.clientY;}
+    }
+},{passive:true});
+window.addEventListener('touchmove',e=>{
+    for(const t of e.changedTouches){
+        if(t.identifier!==camPan.id) continue;
+        const dx=t.clientX-camPan.startX, dy=t.clientY-camPan.startY;
+        camPan.yaw=Math.max(-PAN_YAW_MAX,Math.min(PAN_YAW_MAX,dx*PAN_YAW_SCALE));
+        camPan.pitch=Math.max(-PAN_PITCH_MAX,Math.min(PAN_PITCH_MAX,-dy*PAN_PITCH_SCALE));
+    }
+},{passive:true});
+window.addEventListener('touchend',e=>{
+    for(const t of e.changedTouches){if(t.identifier===camPan.id){camPan.id=null;}}
+},{passive:true});
+window.addEventListener('touchcancel',e=>{
+    for(const t of e.changedTouches){if(t.identifier===camPan.id){camPan.id=null;}}
+},{passive:true});
 const abductBtn=document.getElementById('abduct-btn');
 abductBtn.addEventListener('pointerdown',()=>isAbducting=true);
 abductBtn.addEventListener('pointerup',()=>isAbducting=false);
@@ -2340,7 +2402,8 @@ function animate(){
         b.mesh.position.add(b.velocity);
         b.life--;
         if(b.life<=0){scene.remove(b.mesh);enemyBullets.splice(i,1);continue;}
-        if(b.mesh.position.distanceTo(ufo.position)<12){
+        const bDist=b.mesh.position.distanceTo(ufo.position);
+        if(bDist<12){
             soundManager.playOnce('ufoHit',0.9);
             ufoHP=Math.max(0,ufoHP-b.damage);
             hpFill.style.width=ufoHP+'%';
@@ -2349,10 +2412,32 @@ function animate(){
             bodyMat.emissive.setHex(0xff0000);
             setTimeout(()=>bodyMat.emissive.setHex(origColor),150);
             scene.remove(b.mesh);enemyBullets.splice(i,1);
+        } else if(!b.flybyPlayed && bDist<28){
+            b.flybyPlayed=true;
+            soundManager.playOnce('bulletFlyby',0.55);
         }
     }
     // ロックオン警告UI
-    lockWarningEl.style.opacity=apaches.some(ap=>ap.lockTimer>0)?'1':'0';
+    const _isLocked=apaches.some(ap=>ap.lockTimer>0);
+    lockWarningEl.style.opacity=_isLocked?'1':'0';
+    if(_isLocked&&!_lockSoundPlayed){soundManager.playOnce('missilelock',0.9);_lockSoundPlayed=true;}
+    if(!_isLocked){_lockSoundPlayed=false;}
+
+    // 照準リング — ドッグファイト時に表示、敵がオートエイムコーン内で赤くロック表示
+    if(hasCombat){
+        aimRingEl.style.opacity='1';
+        const AIM_COS=0.42;
+        const _aimLocked=apaches.some(ap=>{
+            const d=ap.mesh.position.distanceTo(ufo.position);
+            if(d>300) return false;
+            const toE=new THREE.Vector3().subVectors(ap.mesh.position,ufo.position).normalize();
+            return ufoMoveDir.dot(toE)>AIM_COS;
+        });
+        if(_aimLocked){aimRingEl.classList.add('locked');}else{aimRingEl.classList.remove('locked');}
+    } else {
+        aimRingEl.style.opacity='0';
+        aimRingEl.classList.remove('locked');
+    }
 
     for(let i=apaches.length-1;i>=0;i--){
         const ap=apaches[i];
@@ -2544,14 +2629,20 @@ function animate(){
     // ドッグファイトモード: 敵出現時にカメラを引いて水平視点へ遷移
     const hasCombat=apaches.length>0;
     dogfightCamT=THREE.MathUtils.lerp(dogfightCamT,hasCombat?1:0,0.025);
-    const camOffY=THREE.MathUtils.lerp(35,15,dogfightCamT);
-    const camOffZ=THREE.MathUtils.lerp(55,90,dogfightCamT);
-    const camLookOffY=THREE.MathUtils.lerp(-25,5,dogfightCamT);
+    // ドッグファイト時はカメラをほぼ同高・後方遠めにして水平視点を確保
+    const camOffY=THREE.MathUtils.lerp(35,5,dogfightCamT);
+    const camOffZ=THREE.MathUtils.lerp(55,110,dogfightCamT);
+    const camLookOffY=THREE.MathUtils.lerp(-25,-10,dogfightCamT);
 
-    // A: 進行方向先読みカメラ — UFO後方にオフセット、前方を注視
-    const camBackX=-ufoMoveDir.x*camOffZ;
-    const camBackZ=-ufoMoveDir.z*camOffZ;
-    camTarget.set(ufo.position.x+camBackX+camShake, ufo.position.y+camOffY, ufo.position.z+camBackZ);
+    // PANが解除されたらスナップバック
+    if(camPan.id===null){camPan.yaw*=0.88;camPan.pitch*=0.88;}
+
+    // A: 進行方向先読みカメラ — UFO後方にオフセット、前方を注視 + PANオフセット
+    const _panCos=Math.cos(camPan.yaw),_panSin=Math.sin(camPan.yaw);
+    const _rawBackX=-ufoMoveDir.x*camOffZ,_rawBackZ=-ufoMoveDir.z*camOffZ;
+    const camBackX=_rawBackX*_panCos-_rawBackZ*_panSin;
+    const camBackZ=_rawBackX*_panSin+_rawBackZ*_panCos;
+    camTarget.set(ufo.position.x+camBackX+camShake, ufo.position.y+camOffY+camPan.pitch, ufo.position.z+camBackZ);
     const leadDist=THREE.MathUtils.lerp(15,8,dogfightCamT);
     camLookTarget.set(ufo.position.x+ufoMoveDir.x*leadDist, ufo.position.y+camLookOffY, ufo.position.z+ufoMoveDir.z*leadDist);
     camera.position.lerp(camTarget,0.08);

@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## リポジトリ
+
+- **GitHub**: https://github.com/halsistm/UFO
+- **push先**: `git push origin main`（originは上記URLに設定済み）
+
 ## プロジェクト概要
 
 **UFO Abductor - OPEN WORLD** は、ブラウザで動作する単一HTMLファイルのゲームです。Three.js r128 を CDN から読み込み、サーバー不要でローカルファイルとして開けます（ただし音声ファイルのフェッチに HTTP サーバーが必要）。
