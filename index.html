@@ -2424,7 +2424,7 @@ function animate(){
     if(!_isLocked){_lockSoundPlayed=false;}
 
     // 照準リング — ドッグファイト時に表示、敵がオートエイムコーン内で赤くロック表示
-    if(hasCombat){
+    if(apaches.length>0){
         aimRingEl.style.opacity='1';
         const AIM_COS=0.42;
         const _aimLocked=apaches.some(ap=>{
@@ -2438,6 +2438,7 @@ function animate(){
         aimRingEl.style.opacity='0';
         aimRingEl.classList.remove('locked');
     }
+
 
     for(let i=apaches.length-1;i>=0;i--){
         const ap=apaches[i];
