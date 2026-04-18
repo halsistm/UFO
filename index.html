@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -14,286 +15,289 @@
             --color-warn:   #ff2200;
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            overflow: hidden; background: #000; font-family: 'Courier New', monospace;
-            user-select: none; -webkit-user-select: none;
-            -webkit-touch-callout: none;
-        }
-        canvas { display: block; }
-        #ui-container {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; z-index: 10;
-        }
-        #score-board {
-            position: absolute; top: 20px; left: 20px;
-            color: var(--color-beam); font-size: 20px; font-weight: bold;
-            text-shadow: 0 0 12px var(--color-beam);
-            letter-spacing: 2px;
-        }
-        #multiplier { font-size: 12px; color: #88ffcc; margin-top: 4px; opacity: 0.8; }
-        #biome-label {
-            position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
-            color: #aaffdd; font-size: 13px; letter-spacing: 3px;
-            text-shadow: 0 0 10px #00ffaa;
-            background: rgba(0,0,0,0.4); padding: 5px 16px; border-radius: 20px;
-            border: 1px solid rgba(0,255,136,0.27);
-        }
-        #hp-bar-container {
-            position: absolute; top: 20px; right: 20px;
-            color: var(--color-hp); font-size: 11px; letter-spacing: 2px;
-            text-align: center;
-        }
-        #hp-bar-bg {
-            width: 140px; height: 8px; background: #1a0000;
-            border: 1px solid var(--color-hp); border-radius: 4px; margin-top: 3px;
-        }
-        #hp-fill {
-            height: 100%; background: linear-gradient(90deg,#ff2200,#ff6600);
-            border-radius: 4px; transition: width 0.3s;
-        }
-        #apache-warning {
-            position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%,-50%);
-            color: var(--color-warn); font-size: 28px; font-weight: bold;
-            text-shadow: 0 0 20px #ff4400;
-            pointer-events: none; opacity: 0;
-            letter-spacing: 3px;
-        }
-        #lock-warning {
-            position: fixed; top: 78px; left: 50%; transform: translateX(-50%);
-            color: #ff2200; font-size: 18px; font-weight: bold;
-            text-shadow: 0 0 12px #ff4400;
-            pointer-events: none; opacity: 0; transition: opacity 0.08s;
-            letter-spacing: 2px; z-index: 100;
-            animation: lockPulse 0.35s infinite alternate;
-        }
-        @keyframes lockPulse {
-            from { text-shadow: 0 0 8px #ff2200; }
-            to   { text-shadow: 0 0 28px #ff4400, 0 0 55px rgba(255,60,0,0.5); }
-        }
-        #military-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; opacity: 0; transition: opacity 0.8s;
-            box-shadow: inset 0 0 80px 30px rgba(255,80,0,0.55);
-            border: 3px solid rgba(255,80,0,0);
-            z-index: 9;
-        }
-        #military-overlay.active {
-            opacity: 1;
-            border-color: rgba(255,80,0,0.6);
-            animation: milFlicker 1.8s infinite;
-        }
-        @keyframes milFlicker {
-            0%,100%{box-shadow:inset 0 0 80px 30px rgba(255,80,0,0.55);}
-            50%{box-shadow:inset 0 0 100px 40px rgba(255,60,0,0.35);}
-        }
-        #military-banner {
-            position: fixed; top: 0; left: 0; width: 100%;
-            background: repeating-linear-gradient(
-                -45deg, rgba(255,80,0,0.7) 0px, rgba(255,80,0,0.7) 10px,
-                rgba(0,0,0,0.7) 10px, rgba(0,0,0,0.7) 20px
-            );
-            color: #fff; font-size: 13px; font-weight: bold; letter-spacing: 4px;
-            text-align: center; padding: 5px 0;
-            pointer-events: none; opacity: 0; transition: opacity 0.5s;
-            z-index: 10; text-shadow: 0 0 8px #ff4400;
-        }
-        #military-banner.active { opacity: 1; }
-        /* ── タイトル画面（起動時 & ゲームオーバー後に表示）── */
-        #title-screen {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,5,0.78);
-            backdrop-filter: blur(2px);
-            z-index: 2000;
-            display: flex; align-items: center; justify-content: center;
-            flex-direction: column; gap: 0;
-            transition: opacity 0.6s;
-        }
-        #title-screen.hidden {
-            opacity: 0; pointer-events: none;
-        }
+```
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        overflow: hidden; background: #000; font-family: 'Courier New', monospace;
+        user-select: none; -webkit-user-select: none;
+        -webkit-touch-callout: none;
+    }
+    canvas { display: block; }
+    #ui-container {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        pointer-events: none; z-index: 10;
+    }
+    #score-board {
+        position: absolute; top: 20px; left: 20px;
+        color: var(--color-beam); font-size: 20px; font-weight: bold;
+        text-shadow: 0 0 12px var(--color-beam);
+        letter-spacing: 2px;
+    }
+    #multiplier { font-size: 12px; color: #88ffcc; margin-top: 4px; opacity: 0.8; }
+    #biome-label {
+        position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+        color: #aaffdd; font-size: 13px; letter-spacing: 3px;
+        text-shadow: 0 0 10px #00ffaa;
+        background: rgba(0,0,0,0.4); padding: 5px 16px; border-radius: 20px;
+        border: 1px solid rgba(0,255,136,0.27);
+    }
+    #hp-bar-container {
+        position: absolute; top: 20px; right: 20px;
+        color: var(--color-hp); font-size: 11px; letter-spacing: 2px;
+        text-align: center;
+    }
+    #hp-bar-bg {
+        width: 140px; height: 8px; background: #1a0000;
+        border: 1px solid var(--color-hp); border-radius: 4px; margin-top: 3px;
+    }
+    #hp-fill {
+        height: 100%; background: linear-gradient(90deg,#ff2200,#ff6600);
+        border-radius: 4px; transition: width 0.3s;
+    }
+    #apache-warning {
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%,-50%);
+        color: var(--color-warn); font-size: 28px; font-weight: bold;
+        text-shadow: 0 0 20px #ff4400;
+        pointer-events: none; opacity: 0;
+        letter-spacing: 3px;
+    }
+    #lock-warning {
+        position: fixed; top: 78px; left: 50%; transform: translateX(-50%);
+        color: #ff2200; font-size: 18px; font-weight: bold;
+        text-shadow: 0 0 12px #ff4400;
+        pointer-events: none; opacity: 0; transition: opacity 0.08s;
+        letter-spacing: 2px; z-index: 100;
+        animation: lockPulse 0.35s infinite alternate;
+    }
+    @keyframes lockPulse {
+        from { text-shadow: 0 0 8px #ff2200; }
+        to   { text-shadow: 0 0 28px #ff4400, 0 0 55px rgba(255,60,0,0.5); }
+    }
+    #military-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        pointer-events: none; opacity: 0; transition: opacity 0.8s;
+        box-shadow: inset 0 0 80px 30px rgba(255,80,0,0.55);
+        border: 3px solid rgba(255,80,0,0);
+        z-index: 9;
+    }
+    #military-overlay.active {
+        opacity: 1;
+        border-color: rgba(255,80,0,0.6);
+        animation: milFlicker 1.8s infinite;
+    }
+    @keyframes milFlicker {
+        0%,100%{box-shadow:inset 0 0 80px 30px rgba(255,80,0,0.55);}
+        50%{box-shadow:inset 0 0 100px 40px rgba(255,60,0,0.35);}
+    }
+    #military-banner {
+        position: fixed; top: 0; left: 0; width: 100%;
+        background: repeating-linear-gradient(
+            -45deg, rgba(255,80,0,0.7) 0px, rgba(255,80,0,0.7) 10px,
+            rgba(0,0,0,0.7) 10px, rgba(0,0,0,0.7) 20px
+        );
+        color: #fff; font-size: 13px; font-weight: bold; letter-spacing: 4px;
+        text-align: center; padding: 5px 0;
+        pointer-events: none; opacity: 0; transition: opacity 0.5s;
+        z-index: 10; text-shadow: 0 0 8px #ff4400;
+    }
+    #military-banner.active { opacity: 1; }
+    /* ── タイトル画面（起動時 & ゲームオーバー後に表示）── */
+    #title-screen {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,5,0.78);
+        backdrop-filter: blur(2px);
+        z-index: 2000;
+        display: flex; align-items: center; justify-content: center;
+        flex-direction: column; gap: 0;
+        transition: opacity 0.6s;
+    }
+    #title-screen.hidden {
+        opacity: 0; pointer-events: none;
+    }
 
-        /* ゲームオーバーバナー（ゲーム開始前は非表示）*/
-        #ts-gameover-banner {
-            display: none;
-            flex-direction: column; align-items: center; gap: 6px;
-            margin-bottom: 36px;
-        }
-        #ts-gameover-banner.visible { display: flex; }
-        #ts-gameover-title {
-            color: var(--color-warn); font-size: 42px; font-weight: bold;
-            letter-spacing: 6px; text-shadow: 0 0 24px var(--color-warn);
-            animation: ts-pulse 1.8s ease-in-out infinite;
-        }
-        #ts-gameover-score {
-            color: #ccc; font-size: 13px; letter-spacing: 3px; margin-top: 4px;
-        }
-        @keyframes ts-pulse {
-            0%,100% { opacity: 1; } 50% { opacity: 0.65; }
-        }
+    /* ゲームオーバーバナー（ゲーム開始前は非表示）*/
+    #ts-gameover-banner {
+        display: none;
+        flex-direction: column; align-items: center; gap: 6px;
+        margin-bottom: 36px;
+    }
+    #ts-gameover-banner.visible { display: flex; }
+    #ts-gameover-title {
+        color: var(--color-warn); font-size: 42px; font-weight: bold;
+        letter-spacing: 6px; text-shadow: 0 0 24px var(--color-warn);
+        animation: ts-pulse 1.8s ease-in-out infinite;
+    }
+    #ts-gameover-score {
+        color: #ccc; font-size: 13px; letter-spacing: 3px; margin-top: 4px;
+    }
+    @keyframes ts-pulse {
+        0%,100% { opacity: 1; } 50% { opacity: 0.65; }
+    }
 
-        /* メインタイトル */
-        #ts-title {
-            font-size: clamp(36px, 7vw, 72px);
-            font-weight: bold; letter-spacing: 6px;
-            color: var(--color-beam);
-            text-shadow: 0 0 30px var(--color-beam), 0 0 60px rgba(0,255,136,0.4);
-            line-height: 1;
-            animation: ts-glow 3s ease-in-out infinite;
-        }
-        @keyframes ts-glow {
-            0%,100% { text-shadow: 0 0 30px var(--color-beam), 0 0 60px rgba(0,255,136,0.4); }
-            50%      { text-shadow: 0 0 50px var(--color-beam), 0 0 90px rgba(0,255,136,0.6); }
-        }
-        #ts-subtitle {
-            font-size: 13px; letter-spacing: 8px; color: #44cc88;
-            margin-top: 10px; margin-bottom: 48px; opacity: 0.7;
-        }
+    /* メインタイトル */
+    #ts-title {
+        font-size: clamp(36px, 7vw, 72px);
+        font-weight: bold; letter-spacing: 6px;
+        color: var(--color-beam);
+        text-shadow: 0 0 30px var(--color-beam), 0 0 60px rgba(0,255,136,0.4);
+        line-height: 1;
+        animation: ts-glow 3s ease-in-out infinite;
+    }
+    @keyframes ts-glow {
+        0%,100% { text-shadow: 0 0 30px var(--color-beam), 0 0 60px rgba(0,255,136,0.4); }
+        50%      { text-shadow: 0 0 50px var(--color-beam), 0 0 90px rgba(0,255,136,0.6); }
+    }
+    #ts-subtitle {
+        font-size: 13px; letter-spacing: 8px; color: #44cc88;
+        margin-top: 10px; margin-bottom: 48px; opacity: 0.7;
+    }
 
-        /* 操作説明 */
-        #ts-controls {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px;
-            margin-bottom: 48px; font-size: 11px; letter-spacing: 2px;
-            color: rgba(0,255,136,0.5); text-align: left;
-        }
-        #ts-controls span { display: flex; align-items: center; gap: 8px; }
-        #ts-controls .key {
-            display: inline-block; border: 1px solid rgba(0,255,136,0.4);
-            padding: 1px 7px; border-radius: 3px; font-size: 10px;
-            color: rgba(0,255,136,0.7);
-        }
+    /* 操作説明 */
+    #ts-controls {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px;
+        margin-bottom: 48px; font-size: 11px; letter-spacing: 2px;
+        color: rgba(0,255,136,0.5); text-align: left;
+    }
+    #ts-controls span { display: flex; align-items: center; gap: 8px; }
+    #ts-controls .key {
+        display: inline-block; border: 1px solid rgba(0,255,136,0.4);
+        padding: 1px 7px; border-radius: 3px; font-size: 10px;
+        color: rgba(0,255,136,0.7);
+    }
 
-        /* STARTボタン */
-        #ts-start-btn {
-            padding: 14px 56px;
-            background: transparent;
-            border: 2px solid var(--color-beam);
-            color: var(--color-beam);
-            font-family: 'Courier New', monospace;
-            font-size: 16px; font-weight: bold; letter-spacing: 5px;
-            cursor: pointer;
-            text-shadow: 0 0 10px var(--color-beam);
-            box-shadow: 0 0 20px rgba(0,255,136,0.2), inset 0 0 20px rgba(0,255,136,0.05);
-            transition: all 0.15s;
-            clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
-        }
-        #ts-start-btn:hover {
-            background: rgba(0,255,136,0.12);
-            box-shadow: 0 0 35px rgba(0,255,136,0.4), inset 0 0 30px rgba(0,255,136,0.1);
-        }
-        #ts-start-btn:active { transform: scale(0.97); }
+    /* STARTボタン */
+    #ts-start-btn {
+        padding: 14px 56px;
+        background: transparent;
+        border: 2px solid var(--color-beam);
+        color: var(--color-beam);
+        font-family: 'Courier New', monospace;
+        font-size: 16px; font-weight: bold; letter-spacing: 5px;
+        cursor: pointer;
+        text-shadow: 0 0 10px var(--color-beam);
+        box-shadow: 0 0 20px rgba(0,255,136,0.2), inset 0 0 20px rgba(0,255,136,0.05);
+        transition: all 0.15s;
+        clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+    }
+    #ts-start-btn:hover {
+        background: rgba(0,255,136,0.12);
+        box-shadow: 0 0 35px rgba(0,255,136,0.4), inset 0 0 30px rgba(0,255,136,0.1);
+    }
+    #ts-start-btn:active { transform: scale(0.97); }
 
-        #ts-version {
-            position: absolute; bottom: 20px; right: 24px;
-            font-size: 10px; color: rgba(0,255,136,0.2); letter-spacing: 2px;
-        }
-        #controls {
-            position: absolute; bottom: 30px; right: 20px;
-            display: flex; gap: 16px; pointer-events: auto;
-        }
+    #ts-version {
+        position: absolute; bottom: 20px; right: 24px;
+        font-size: 10px; color: rgba(0,255,136,0.2); letter-spacing: 2px;
+    }
+    #controls {
+        position: absolute; bottom: 30px; right: 20px;
+        display: flex; gap: 16px; pointer-events: auto;
+    }
 
-        /* ── ボタン基底スタイル ── */
-        .btn {
-            width: 80px; height: 80px;
-            background: radial-gradient(circle, rgba(0,255,136,0.15) 0%, rgba(0,255,136,0.05) 100%);
-            border: 2px solid var(--color-beam); border-radius: 50%;
-            color: var(--color-beam); display: flex; align-items: center; justify-content: center;
-            font-family: 'Courier New', monospace; font-weight: bold; font-size: 11px; letter-spacing: 1px;
-            cursor: pointer; text-shadow: 0 0 8px var(--color-beam);
-            box-shadow: 0 0 15px rgba(0,255,136,0.2);
-            transition: all 0.1s; user-select: none; pointer-events: auto;
-        }
-        .btn:active {
-            background: radial-gradient(circle, rgba(0,255,136,0.4) 0%, rgba(0,255,136,0.1) 100%);
-        }
+    /* ── ボタン基底スタイル ── */
+    .btn {
+        width: 80px; height: 80px;
+        background: radial-gradient(circle, rgba(0,255,136,0.15) 0%, rgba(0,255,136,0.05) 100%);
+        border: 2px solid var(--color-beam); border-radius: 50%;
+        color: var(--color-beam); display: flex; align-items: center; justify-content: center;
+        font-family: 'Courier New', monospace; font-weight: bold; font-size: 11px; letter-spacing: 1px;
+        cursor: pointer; text-shadow: 0 0 8px var(--color-beam);
+        box-shadow: 0 0 15px rgba(0,255,136,0.2);
+        transition: all 0.1s; user-select: none; pointer-events: auto;
+    }
+    .btn:active {
+        background: radial-gradient(circle, rgba(0,255,136,0.4) 0%, rgba(0,255,136,0.1) 100%);
+    }
 
-        /* ── ATTACKボタン差分のみ上書き ── */
-        .btn--attack {
-            background: radial-gradient(circle, rgba(255,60,0,0.2) 0%, rgba(255,60,0,0.05) 100%);
-            border-color: var(--color-attack);
-            color: #ff5500;
-            font-size: 10px;
-            text-shadow: 0 0 8px var(--color-attack);
-            box-shadow: 0 0 15px rgba(255,51,0,0.2);
-        }
-        .btn--attack:active {
-            background: radial-gradient(circle, rgba(255,60,0,0.5) 0%, rgba(255,60,0,0.15) 100%);
-        }
+    /* ── ATTACKボタン差分のみ上書き ── */
+    .btn--attack {
+        background: radial-gradient(circle, rgba(255,60,0,0.2) 0%, rgba(255,60,0,0.05) 100%);
+        border-color: var(--color-attack);
+        color: #ff5500;
+        font-size: 10px;
+        text-shadow: 0 0 8px var(--color-attack);
+        box-shadow: 0 0 15px rgba(255,51,0,0.2);
+    }
+    .btn--attack:active {
+        background: radial-gradient(circle, rgba(255,60,0,0.5) 0%, rgba(255,60,0,0.15) 100%);
+    }
 
-        #modal {
-            display: none; position: fixed; top: 0; left: 0;
-            width: 100%; height: 100%; background: rgba(0,0,0,0.92);
-            z-index: 1000; overflow-y: auto; color: #fff;
-            backdrop-filter: blur(4px);
-        }
-        #notification {
-            position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            color: var(--color-beam); font-size: 36px; font-weight: bold;
-            text-shadow: 0 0 20px var(--color-beam);
-            pointer-events: none; opacity: 0; transition: opacity 0.3s; letter-spacing: 2px;
-        }
-        #controls-hint {
-            position: absolute; bottom: 130px; left: 20px;
-            color: rgba(0,255,136,0.33); font-size: 11px; letter-spacing: 1px; line-height: 1.8;
-        }
-        #virtual-stick-container {
-            display: none; position: absolute; bottom: 30px; left: 20px; pointer-events: auto;
-        }
-        #stick-base {
-            width: 110px; height: 110px;
-            background: radial-gradient(circle, rgba(0,255,136,0.08) 0%, rgba(0,255,136,0.02) 100%);
-            border: 2px solid rgba(0,255,136,0.35); border-radius: 50%;
-            position: relative; touch-action: none;
-        }
-        #stick-knob {
-            width: 46px; height: 46px;
-            background: radial-gradient(circle, rgba(0,255,136,0.55) 0%, rgba(0,255,136,0.25) 100%);
-            border: 2px solid var(--color-beam); border-radius: 50%;
-            position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 0 12px rgba(0,255,136,0.4); pointer-events: none;
-        }
-        /* #hp-bar-container は right:20px top:20px なので speed-indicator は左上寄せに変更 */
-        #speed-indicator {
-            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            color: #ff8800; font-size: 11px; letter-spacing: 2px;
-            text-shadow: 0 0 8px #ff8800;
-            opacity: 0; transition: opacity 0.2s;
-        }
-        #aim-ring {
-            position: fixed; top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            width: 130px; height: 130px;
-            border: 3px solid rgba(0,255,136,0.55);
-            border-radius: 50%;
-            pointer-events: none; opacity: 0;
-            transition: opacity 0.25s, border-color 0.15s, box-shadow 0.15s;
-            box-shadow: 0 0 18px rgba(0,255,136,0.25), inset 0 0 18px rgba(0,255,136,0.1);
-        }
-        #aim-ring::before, #aim-ring::after {
-            content: ''; position: absolute;
-            background: rgba(0,255,136,0.6);
-        }
-        #aim-ring::before {
-            width: 2px; height: 18px;
-            top: 50%; left: 50%; transform: translate(-50%,-50%);
-        }
-        #aim-ring::after {
-            width: 18px; height: 2px;
-            top: 50%; left: 50%; transform: translate(-50%,-50%);
-        }
-        #aim-ring.locked {
-            border-color: rgba(255,50,50,0.9);
-            box-shadow: 0 0 28px rgba(255,50,50,0.5), inset 0 0 18px rgba(255,50,50,0.15);
-            animation: aimPulse 0.35s infinite alternate;
-        }
-        @keyframes aimPulse {
-            from { transform: translate(-50%,-50%) scale(1); }
-            to   { transform: translate(-50%,-50%) scale(1.08); }
-        }
-    </style>
+    #modal {
+        display: none; position: fixed; top: 0; left: 0;
+        width: 100%; height: 100%; background: rgba(0,0,0,0.92);
+        z-index: 1000; overflow-y: auto; color: #fff;
+        backdrop-filter: blur(4px);
+    }
+    #notification {
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        color: var(--color-beam); font-size: 36px; font-weight: bold;
+        text-shadow: 0 0 20px var(--color-beam);
+        pointer-events: none; opacity: 0; transition: opacity 0.3s; letter-spacing: 2px;
+    }
+    #controls-hint {
+        position: absolute; bottom: 130px; left: 20px;
+        color: rgba(0,255,136,0.33); font-size: 11px; letter-spacing: 1px; line-height: 1.8;
+    }
+    #virtual-stick-container {
+        display: none; position: absolute; bottom: 30px; left: 20px; pointer-events: auto;
+    }
+    #stick-base {
+        width: 110px; height: 110px;
+        background: radial-gradient(circle, rgba(0,255,136,0.08) 0%, rgba(0,255,136,0.02) 100%);
+        border: 2px solid rgba(0,255,136,0.35); border-radius: 50%;
+        position: relative; touch-action: none;
+    }
+    #stick-knob {
+        width: 46px; height: 46px;
+        background: radial-gradient(circle, rgba(0,255,136,0.55) 0%, rgba(0,255,136,0.25) 100%);
+        border: 2px solid var(--color-beam); border-radius: 50%;
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        box-shadow: 0 0 12px rgba(0,255,136,0.4); pointer-events: none;
+    }
+    /* #hp-bar-container は right:20px top:20px なので speed-indicator は左上寄せに変更 */
+    #speed-indicator {
+        position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+        color: #ff8800; font-size: 11px; letter-spacing: 2px;
+        text-shadow: 0 0 8px #ff8800;
+        opacity: 0; transition: opacity 0.2s;
+    }
+    #aim-ring {
+        position: fixed; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: 130px; height: 130px;
+        border: 3px solid rgba(0,255,136,0.55);
+        border-radius: 50%;
+        pointer-events: none; opacity: 0;
+        transition: opacity 0.25s, border-color 0.15s, box-shadow 0.15s;
+        box-shadow: 0 0 18px rgba(0,255,136,0.25), inset 0 0 18px rgba(0,255,136,0.1);
+    }
+    #aim-ring::before, #aim-ring::after {
+        content: ''; position: absolute;
+        background: rgba(0,255,136,0.6);
+    }
+    #aim-ring::before {
+        width: 2px; height: 18px;
+        top: 50%; left: 50%; transform: translate(-50%,-50%);
+    }
+    #aim-ring::after {
+        width: 18px; height: 2px;
+        top: 50%; left: 50%; transform: translate(-50%,-50%);
+    }
+    #aim-ring.locked {
+        border-color: rgba(255,50,50,0.9);
+        box-shadow: 0 0 28px rgba(255,50,50,0.5), inset 0 0 18px rgba(255,50,50,0.15);
+        animation: aimPulse 0.35s infinite alternate;
+    }
+    @keyframes aimPulse {
+        from { transform: translate(-50%,-50%) scale(1); }
+        to   { transform: translate(-50%,-50%) scale(1.08); }
+    }
+</style>
+```
+
 </head>
 <body>
 
@@ -325,33 +329,40 @@
 </div>
 
 <!-- タイトル画面（起動時 & ゲームオーバー後） -->
+
 <div id="title-screen" role="dialog" aria-label="UFO ABDUCTOR">
 
-    <!-- ゲームオーバー時のみ表示されるバナー -->
-    <div id="ts-gameover-banner">
-        <div id="ts-gameover-title">GAME OVER</div>
-        <div id="ts-gameover-score"></div>
-    </div>
+```
+<!-- ゲームオーバー時のみ表示されるバナー -->
+<div id="ts-gameover-banner">
+    <div id="ts-gameover-title">GAME OVER</div>
+    <div id="ts-gameover-score"></div>
+</div>
 
-    <div id="ts-title">UFO ABDUCTOR</div>
-    <div id="ts-subtitle">— OPEN WORLD —</div>
+<div id="ts-title">UFO ABDUCTOR</div>
+<div id="ts-subtitle">— OPEN WORLD —</div>
 
-    <div id="ts-controls">
-        <span><span class="key">W A S D</span> 移動</span>
-        <span><span class="key">ABDUCT</span> 吸い込みビーム</span>
-        <span><span class="key">SPACE</span> 攻撃ビーム</span>
-        <span><span class="key">ATTACK</span> 攻撃ビーム</span>
-    </div>
+<div id="ts-controls">
+    <span><span class="key">W A S D</span> 移動</span>
+    <span><span class="key">ABDUCT</span> 吸い込みビーム</span>
+    <span><span class="key">SPACE</span> 攻撃ビーム</span>
+    <span><span class="key">ATTACK</span> 攻撃ビーム</span>
+</div>
 
-    <button id="ts-start-btn">START</button>
+<button id="ts-start-btn">START</button>
 
-    <div id="ts-version">v2.0 · OPEN WORLD</div>
+<div id="ts-version">v2.0 · OPEN WORLD</div>
+```
+
 </div>
 
 <!-- セキュリティ強化: 本番環境では integrity="sha384-<ハッシュ>" crossorigin="anonymous" を追加してください
      cdnjs.cloudflare.com の Three.js r128 ページからSRIハッシュを取得できます -->
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
 <script>
 window.addEventListener('load', () => {
 
@@ -2195,6 +2206,7 @@ const militaryOverlayEl=document.getElementById('military-overlay');
 const militaryBannerEl=document.getElementById('military-banner');
 let spaceUsed=false; // keys['_spaceUsed'] から分離
 const prevUfoPos=new THREE.Vector3(),ufoMoveDir=new THREE.Vector3(0,0,-1);
+const dogCamDir=new THREE.Vector3(0,0,-1); // フライトシム視点用: 進行方向を滑らかに追従
 const _streakQuat=new THREE.Quaternion(),_zAxis=new THREE.Vector3(0,0,1);
 
 function animate(){
@@ -2372,7 +2384,7 @@ function animate(){
     if(apacheSpawnTimer>=APACHE_SPAWN_INTERVAL){apacheSpawnTimer=0;spawnApache();}
 
     // ── 軍事ゾーン判定 & 大量スポーン ──
-    const nowInMilitary=getBiome(ufo.position.x,ufo.position.z)===BIOME.MILITARY;
+    const nowInMilitary=!isFastMode&&getBiome(ufo.position.x,ufo.position.z)===BIOME.MILITARY;
     if(nowInMilitary!==inMilitaryZone){
         inMilitaryZone=nowInMilitary;
         militaryOverlayEl.classList.toggle('active',inMilitaryZone);
@@ -2627,14 +2639,12 @@ function animate(){
 
     if(camShakeTimer>0)camShakeTimer-=delta;
     const camShake=camShakeTimer>0?(Math.random()-0.5)*4*camShakeTimer:0;
-    // ドッグファイトモード: 敵出現時にカメラを引いて水平視点へ遷移
+
+    // ドッグファイトモード移行量 (0=通常, 1=戦闘)
     const hasCombat=apaches.length>0;
     dogfightCamT=THREE.MathUtils.lerp(dogfightCamT,hasCombat?1:0,0.025);
 
-    // PANが解除されたらスナップバック（ドッグファイト時のみ有効）
-    if(camPan.id===null){camPan.yaw*=0.88;camPan.pitch*=0.88;}
-
-    // ── A-1: 通常時カメラ — 俯瞰固定（進行方向に依存しない安定した真後ろ上方視点）
+    // ── A-1: 通常時カメラ — 北固定・俯瞰
     const _fixedCamX = ufo.position.x + camShake;
     const _fixedCamY = ufo.position.y + 35;
     const _fixedCamZ = ufo.position.z + 55;
@@ -2642,21 +2652,20 @@ function animate(){
     const _fixedLookY = ufo.position.y - 25;
     const _fixedLookZ = ufo.position.z;
 
-    // ── A-2: ドッグファイト時カメラ — 進行方向先読み + PAN
-    const _panCos=Math.cos(camPan.yaw),_panSin=Math.sin(camPan.yaw);
-    const _rawBackX=-ufoMoveDir.x*110,_rawBackZ=-ufoMoveDir.z*110;
-    const camBackX=_rawBackX*_panCos-_rawBackZ*_panSin;
-    const camBackZ=_rawBackX*_panSin+_rawBackZ*_panCos;
-    const _dogCamOffY=THREE.MathUtils.lerp(35,5,dogfightCamT);
-    const _dogLookOffY=THREE.MathUtils.lerp(-25,-10,dogfightCamT);
-    const _dogCamX = ufo.position.x+camBackX+camShake;
-    const _dogCamY = ufo.position.y+_dogCamOffY+camPan.pitch;
-    const _dogCamZ = ufo.position.z+camBackZ;
-    const _dogLookX = ufo.position.x+ufoMoveDir.x*8;
-    const _dogLookY = ufo.position.y+_dogLookOffY;
-    const _dogLookZ = ufo.position.z+ufoMoveDir.z*8;
+    // ── A-2: ドッグファイト時カメラ — フライトシミュレーター視点
+    // 進行方向をなめらかに追従（速めのlerp）
+    if(isMoving) dogCamDir.lerp(ufoMoveDir, 0.12).normalize();
 
-    // ── 通常 ⇔ ドッグファイト ブレンド
+    // UFO後方22 + 上8にカメラを配置
+    const _dogCamX = ufo.position.x - dogCamDir.x*22 + camShake;
+    const _dogCamY = ufo.position.y + 8;
+    const _dogCamZ = ufo.position.z - dogCamDir.z*22;
+    // 前方30ユニット先を注視
+    const _dogLookX = ufo.position.x + dogCamDir.x*30;
+    const _dogLookY = ufo.position.y + 2;
+    const _dogLookZ = ufo.position.z + dogCamDir.z*30;
+
+    // ── 通常 ⇔ フライトシム ブレンド
     camTarget.set(
         THREE.MathUtils.lerp(_fixedCamX,_dogCamX,dogfightCamT),
         THREE.MathUtils.lerp(_fixedCamY,_dogCamY,dogfightCamT),
@@ -2667,21 +2676,18 @@ function animate(){
         THREE.MathUtils.lerp(_fixedLookY,_dogLookY,dogfightCamT),
         THREE.MathUtils.lerp(_fixedLookZ,_dogLookZ,dogfightCamT)
     );
-    camera.position.lerp(camTarget,0.08);
-    // 通常時は北（ゲーム開始時の向き）を画面上に固定
-    // ドッグファイト移行後も up を world Y に保つことでロールを防ぐ
-    camera.up.set(0,1,0);
+    camera.position.lerp(camTarget, 0.08);
+
+    // バンキング（旋回時に地平線が傾く）: 通常時はロールゼロ、戦闘時に発動
+    // ufoMoveDir と dogCamDir のクロスで旋回量を計算
+    const _cross = dogCamDir.clone().cross(ufoMoveDir); // Y成分が旋回の強さ
+    const _bankAngle = _cross.y * 0.45 * dogfightCamT;  // 最大±0.45rad ≈ ±26°
+    camera.up.set(Math.sin(_bankAngle), Math.cos(_bankAngle), 0);
     camera.lookAt(camLookTarget);
 
-    // B: 急旋回時FOV拡張 — ドッグファイト中のみ発動
-    if(isMoving && dogfightCamT > 0.1){
-        const dot=prevCamMoveDir.dot(ufoMoveDir);
-        if(dot<0.88) fovFlashTimer=0.45;
-        prevCamMoveDir.copy(ufoMoveDir);
-    }
-    if(fovFlashTimer>0) fovFlashTimer-=delta;
-    const fovTarget=fovFlashTimer>0 ? THREE.MathUtils.lerp(55,88,Math.min(1,fovFlashTimer*4)) : 55;
-    camera.fov=THREE.MathUtils.lerp(camera.fov,fovTarget,0.18);
+    // FOV: 通常55、ドッグファイト中は72で速度感を演出（フラッシュ不要）
+    const fovTarget = THREE.MathUtils.lerp(55, 72, dogfightCamT);
+    camera.fov = THREE.MathUtils.lerp(camera.fov, fovTarget, 0.06);
     camera.updateProjectionMatrix();
 
     renderer.clear();
@@ -2700,5 +2706,6 @@ animate();
 
 });
 </script>
+
 </body>
 </html>
