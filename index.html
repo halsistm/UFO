@@ -1573,11 +1573,11 @@ function _colorizeGLB(scene3d, type){
             metal=0.25; rough=0.82;
             emissCol=new THREE.Color(col).multiplyScalar(0.18);
         } else if(type==='fighter'){
-            // ステルスグレー / ダークブルーグレー
-            const palette=[0x2a3040,0x222838,0x303848,0x1a2030,0x3a4050];
+            // ライトグレー / ブルーグレー（視認しやすい明るめカラー）
+            const palette=[0x8899bb,0x7788aa,0x99aabb,0x6677aa,0xaabbcc];
             col=palette[idx%palette.length];
             metal=0.72; rough=0.28;
-            emissCol=new THREE.Color(0x050810);
+            emissCol=new THREE.Color(0x1a2244).multiplyScalar(0.6);
         } else {
             // 対空砲: 砂漠カーキ / スチールグレー
             const palette=[0x5a5a28,0x6a6030,0x484818,0x303020,0x7a7040];
@@ -1690,13 +1690,29 @@ function spawnFighter(){
         ufo.position.x-ax, 0, ufo.position.z-az
     ).normalize();
 
+    // アフターバーナーグロー（テール位置に発光球 + PointLight）
+    const burnerGroup=new THREE.Group();
+    burnerGroup.position.set(0,0,-14); // ローカル座標でテール方向
+    const burnerGeo=new THREE.SphereGeometry(4,8,8);
+    const burnerMat=new THREE.MeshBasicMaterial({color:0xff7700,transparent:true,opacity:0.9});
+    const burnerMesh=new THREE.Mesh(burnerGeo,burnerMat);
+    burnerGroup.add(burnerMesh);
+    const burnerLight=new THREE.PointLight(0xff8833,12,120);
+    burnerGroup.add(burnerLight);
+    // コアグロー（明るい中心）
+    const coreGeo=new THREE.SphereGeometry(2,6,6);
+    const coreMat=new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.95});
+    burnerGroup.add(new THREE.Mesh(coreGeo,coreMat));
+    model.add(burnerGroup);
+
     apaches.push({
         mesh:model, type:'fighter',
         mainRotor:null, tailRotor:null,
         hp:4, maxHp:4,
         shootTimer:1.5+Math.random()*2, flashTimer:0,
         flyDir, flyTimer:0,
-        passState:'approach', lockTimer:0 // 'approach' | 'pass' | 'turn'
+        passState:'approach', lockTimer:0, // 'approach' | 'pass' | 'turn'
+        burnerGroup, burnerMesh, burnerLight
     });
     soundManager.startApacheSound(model.uuid);
     _showEnemyWarning('⚠ F-22 FIGHTER INCOMING ⚠');
@@ -2511,6 +2527,12 @@ function animate(){
         } else if(ap.type==='fighter'){
             // 戦闘機: 高速でUFOへ接近 → 通過 → 旋回を繰り返す
             ap.flyTimer+=delta;
+            // アフターバーナーパルス
+            if(ap.burnerMesh){
+                const pulse=0.65+0.35*Math.sin(ap.flyTimer*25);
+                ap.burnerMesh.material.opacity=pulse*0.9;
+                ap.burnerLight.intensity=pulse*14;
+            }
             const spd=2.0; // 速い
             if(ap.passState==='approach'){
                 // UFOへ向かって高速接近
@@ -2729,7 +2751,11 @@ function _updateEnemyMarkers(){
         const sx=( _v3.x*0.5+0.5)*W;
         const sy=(-_v3.y*0.5+0.5)*H;
         const inView=_v3.z<1&&sx>0&&sx<W&&sy>0&&sy<H;
-        if(inView){mi++;return;} // 画面内は表示しない（モデルが見えている）
+        const apDist=Math.round(ap.mesh.position.distanceTo(ufo.position));
+        const altDiff=Math.round(ap.mesh.position.y-ufo.position.y);
+        const altStr=altDiff>5?`▲${altDiff}m`:altDiff<-5?`▼${Math.abs(altDiff)}m`:'';
+        // 画面内でも距離が遠い場合はマーカーを表示（戦闘機は常に表示）
+        if(inView && (ap.type!=='fighter' || apDist<80)){mi++;return;}
 
         // マーカー要素を取得or生成
         if(mi>=_markerPool.length){
@@ -2764,7 +2790,8 @@ function _updateEnemyMarkers(){
         m.style.transform='translate(-50%,-50%)';
         m.style.display='flex';
         m.querySelector('.arrow').textContent=arrowChar;
-        m.querySelector('.label').textContent=ap.type==='helicopter'?'HELI':ap.type==='fighter'?'F-22':'GUN';
+        const typeLabel=ap.type==='helicopter'?'HELI':ap.type==='fighter'?'F-22':'GUN';
+        m.querySelector('.label').textContent=typeLabel+' '+apDist+'u'+(altStr?' '+altStr:'');
     });
     // 使わなかったプール要素を隠す
     for(let i=mi;i<_markerPool.length;i++) _markerPool[i].style.display='none';
