@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>UFO Abductor - OPEN WORLD</title>
+    <link rel="icon" href="data:,">
     <style>
         /* ── カスタムプロパティ ── */
         :root {
@@ -2595,9 +2596,9 @@ function animate(){
         // ヒットフラッシュ
         if(ap.flashTimer>0){
             ap.flashTimer-=delta;
-            ap.mesh.traverse(child=>{if(child.isMesh&&child.material)child.material.emissive.copy(_apacheHitColor);});
+            ap.mesh.traverse(child=>{if(child.isMesh&&child.material&&child.material.emissive)child.material.emissive.copy(_apacheHitColor);});
         }else{
-            ap.mesh.traverse(child=>{if(child.isMesh&&child.material)child.material.emissive.copy(_apacheBaseColor);});
+            ap.mesh.traverse(child=>{if(child.isMesh&&child.material&&child.material.emissive)child.material.emissive.copy(_apacheBaseColor);});
         }
 
         // 撃墜
