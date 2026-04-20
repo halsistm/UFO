@@ -2233,9 +2233,10 @@ function animate(){
     const delta=0.016;
 
     const isMoving=keys['KeyW']||keys['KeyS']||keys['KeyA']||keys['KeyD']||keys['ArrowUp']||keys['ArrowDown']||keys['ArrowLeft']||keys['ArrowRight']||vStick.active;
-    // ワープ航法カウント: キーボードは常にmax、スティックは触れている間カウント（手を離したらリセット）
     const isKeyboardMoving=keys['KeyW']||keys['KeyS']||keys['KeyA']||keys['KeyD']||keys['ArrowUp']||keys['ArrowDown']||keys['ArrowLeft']||keys['ArrowRight'];
-    const isFullThrottle=isKeyboardMoving||vStick.active;
+    // ワープ航法カウント: キーボードは常にmax、スティックはマックス入力（magnitude≥0.95）のときのみカウント
+    const vStickMag=Math.sqrt(vStick.x*vStick.x+vStick.y*vStick.y);
+    const isFullThrottle=isKeyboardMoving||(vStick.active&&vStickMag>=0.95);
     if(isFullThrottle)moveStreak=Math.min(moveStreak+delta,3.5);
     else moveStreak=0;
     const boostT=Math.max(0,(moveStreak-1.2)/2.5);
@@ -2652,20 +2653,20 @@ function animate(){
     const _fixedLookY = ufo.position.y - 25;
     const _fixedLookZ = ufo.position.z;
 
-    // ── A-2: ドッグファイト時カメラ — フライトシミュレーター視点
-    // 進行方向をなめらかに追従（速めのlerp）
-    if(isMoving) dogCamDir.lerp(ufoMoveDir, 0.12).normalize();
+    // ── A-2: ドッグファイト時カメラ — 緩やか追従チェイスカム
+    // lerp を遅くしてカメラが振り回されるのを抑制
+    if(isMoving) dogCamDir.lerp(ufoMoveDir, 0.04).normalize();
 
-    // UFO後方22 + 上8にカメラを配置
+    // UFO後方22 + 上20にカメラを配置（高めにして俯瞰気味に）
     const _dogCamX = ufo.position.x - dogCamDir.x*22 + camShake;
-    const _dogCamY = ufo.position.y + 8;
+    const _dogCamY = ufo.position.y + 20;
     const _dogCamZ = ufo.position.z - dogCamDir.z*22;
-    // 前方30ユニット先を注視
-    const _dogLookX = ufo.position.x + dogCamDir.x*30;
+    // 前方5ユニット先だけ注視（先読みを最小限に）
+    const _dogLookX = ufo.position.x + dogCamDir.x*5;
     const _dogLookY = ufo.position.y + 2;
-    const _dogLookZ = ufo.position.z + dogCamDir.z*30;
+    const _dogLookZ = ufo.position.z + dogCamDir.z*5;
 
-    // ── 通常 ⇔ フライトシム ブレンド
+    // ── 通常 ⇔ チェイスカム ブレンド
     camTarget.set(
         THREE.MathUtils.lerp(_fixedCamX,_dogCamX,dogfightCamT),
         THREE.MathUtils.lerp(_fixedCamY,_dogCamY,dogfightCamT),
@@ -2678,11 +2679,8 @@ function animate(){
     );
     camera.position.lerp(camTarget, 0.08);
 
-    // バンキング（旋回時に地平線が傾く）: 通常時はロールゼロ、戦闘時に発動
-    // ufoMoveDir と dogCamDir のクロスで旋回量を計算
-    const _cross = dogCamDir.clone().cross(ufoMoveDir); // Y成分が旋回の強さ
-    const _bankAngle = _cross.y * 0.45 * dogfightCamT;  // 最大±0.45rad ≈ ±26°
-    camera.up.set(Math.sin(_bankAngle), Math.cos(_bankAngle), 0);
+    // バンキング廃止: camera.up を常に垂直に保つ
+    camera.up.set(0, 1, 0);
     camera.lookAt(camLookTarget);
 
     // FOV: 通常55、ドッグファイト中は72で速度感を演出（フラッシュ不要）
