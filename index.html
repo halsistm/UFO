@@ -1195,7 +1195,7 @@ function makePalmTree(){
 }
 
 function makeBuilding(w,d,h,color,rng){
-    // rng が渡されない場合は Math.random をフォールバックとして使う
+    const _color = (color != null) ? color : 0x1e2535;
     const _rng = rng || Math.random.bind(Math);
     const g=new THREE.Group();
     const rows=Math.max(2,Math.floor(h/4));
@@ -1205,12 +1205,12 @@ function makeBuilding(w,d,h,color,rng){
     const winTex=makeBuildingTexture(rows,cols,seed);
 
     const bodyMtl=new THREE.MeshLambertMaterial({
-        color,
-        emissive:new THREE.Color(color).multiplyScalar(0.4),
+        color:_color,
+        emissive:new THREE.Color(_color).multiplyScalar(0.4),
     });
 
     const faceMtl=new THREE.MeshLambertMaterial({
-        color,
+        color:_color,
         emissive:new THREE.Color(0xffffff),
         emissiveIntensity:0.6,
         emissiveMap:winTex,
@@ -1223,7 +1223,7 @@ function makeBuilding(w,d,h,color,rng){
     g.add(body);
 
     const neonColors=[0xff2266,0x00ffcc,0xff8800,0x44aaff,0xff44ff,0x00ff88];
-    const nc=neonColors[Math.floor(_rng()*neonColors.length)]; // ← シードRNG使用
+    const nc=neonColors[Math.min(Math.floor(_rng()*neonColors.length),neonColors.length-1)]||0xff8800;
     const neonBar=new THREE.Mesh(
         new THREE.BoxGeometry(w*0.65,0.55,0.25),
         new THREE.MeshBasicMaterial({color:nc})
