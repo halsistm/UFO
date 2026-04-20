@@ -511,8 +511,9 @@ class SoundManager {
     // ────────────────────────────────────────────
     playOnce(bufKey, vol = 1, offset = 0) {
         const n = this._makeNode(bufKey, false, 0, 0, vol);
-        if (!n) return;
+        if (!n) return null;
         n.src.start(0, offset);
+        return n;
     }
 
     // ────────────────────────────────────────────
@@ -1463,11 +1464,11 @@ const _eBulletMatFighter=new THREE.MeshBasicMaterial({color:0xffee22});
 const _eBulletMatTaikuho=new THREE.MeshBasicMaterial({color:0xff3300});
 const lockWarningEl=document.getElementById('lock-warning');
 const aimRingEl=document.getElementById('aim-ring');
-let _lockSoundPlayed=false;
+let _lockSoundPlayed=false,_lockSoundNode=null;
 
 function fireAttackBeam(){
     if(attackCooldown>0)return;
-    attackCooldown=0.8; attackBeamTimer=0.3;
+    attackCooldown=0.45; attackBeamTimer=0.3;
     soundManager.playOnce('attackBeam', 0.85);
     // オートエイム: 広めのコーン(65°ハーフ角)内の最近傍敵を狙う
     const CONE_COS=0.42;
@@ -2433,8 +2434,8 @@ function animate(){
     // ロックオン警告UI
     const _isLocked=apaches.some(ap=>ap.lockTimer>0);
     lockWarningEl.style.opacity=_isLocked?'1':'0';
-    if(_isLocked&&!_lockSoundPlayed){soundManager.playOnce('missilelock',0.9);_lockSoundPlayed=true;}
-    if(!_isLocked){_lockSoundPlayed=false;}
+    if(_isLocked&&!_lockSoundPlayed){_lockSoundNode=soundManager.playOnce('missilelock',0.9);_lockSoundPlayed=true;}
+    if(!_isLocked&&_lockSoundPlayed){soundManager._stopNode(_lockSoundNode,0.1);_lockSoundNode=null;_lockSoundPlayed=false;}
 
     // 照準リング — ドッグファイト時に表示、敵がオートエイムコーン内で赤くロック表示
     if(apaches.length>0){
