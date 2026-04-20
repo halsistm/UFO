@@ -102,6 +102,22 @@
         z-index: 10; text-shadow: 0 0 8px #ff4400;
     }
     #military-banner.active { opacity: 1; }
+    /* ── 敵方向マーカー ── */
+    .enemy-marker {
+        position: fixed; pointer-events: none; z-index: 50;
+        display: flex; flex-direction: column; align-items: center; gap: 1px;
+    }
+    .enemy-marker .arrow {
+        font-size: 18px; line-height: 1;
+        filter: drop-shadow(0 0 4px currentColor);
+    }
+    .enemy-marker .label {
+        font-size: 9px; font-weight: bold; letter-spacing: 1px;
+        text-shadow: 0 0 6px currentColor;
+    }
+    .enemy-marker.helicopter { color: #ff9900; }
+    .enemy-marker.fighter    { color: #ff3333; }
+    .enemy-marker.taikuho    { color: #ffdd00; }
     /* ── タイトル画面（起動時 & ゲームオーバー後に表示）── */
     #title-screen {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -321,6 +337,7 @@
         <div id="stick-base"><div id="stick-knob"></div></div>
     </div>
     <div id="aim-ring"></div>
+    <div id="enemy-markers"></div>
     <div id="notification">+100</div>
     <div id="apache-warning">⚠ APACHE INCOMING ⚠</div>
     <div id="lock-warning">⚠ MISSILE LOCK ⚠</div>
@@ -1659,7 +1676,7 @@ function spawnHelicopter(){
 function spawnFighter(){
     const model=_instantiateGLB('fighter');
     if(!model) return;
-    const angle=Math.random()*Math.PI*2, dist=220+Math.random()*80;
+    const angle=Math.random()*Math.PI*2, dist=80+Math.random()*60;
     const ax=ufo.position.x+Math.cos(angle)*dist;
     const az=ufo.position.z+Math.sin(angle)*dist;
     const ay=58+Math.random()*18;
@@ -1717,12 +1734,10 @@ function _showEnemyWarning(msg){
 // ランダムにどれかを出現させる
 function spawnApache(){
     const types=['helicopter','fighter','taikuho'];
-    const t=types[Math.floor(Math.random()*types.length)];
-    // GLBがまだロードされていない場合はヘリをプロシージャルで生成
-    if(!_glbCache[t]){
-        _spawnApacheProcedural();
-        return;
-    }
+    // ロード済みの種類だけを対象にしてランダム選択（フォールバックでヘリ化しないように）
+    const available=types.filter(t=>_glbCache[t]);
+    if(available.length===0){_spawnApacheProcedural();return;}
+    const t=available[Math.floor(Math.random()*available.length)];
     if(t==='helicopter') spawnHelicopter();
     else if(t==='fighter') spawnFighter();
     else spawnTaikuho();
@@ -2689,9 +2704,70 @@ function animate(){
     camera.fov = THREE.MathUtils.lerp(camera.fov, fovTarget, 0.06);
     camera.updateProjectionMatrix();
 
+    // ── 敵方向マーカー更新 ──
+    _updateEnemyMarkers();
+
     renderer.clear();
     renderer.setViewport(0,0,window.innerWidth,window.innerHeight);
     renderer.render(scene,camera);
+}
+
+// 敵ごとに画面端矢印を出す
+const _enemyMarkersEl=document.getElementById('enemy-markers');
+const _markerPool=[];
+const _ARROW_DIR=['▲','▶','▼','◀']; // 上右下左
+const _MARGIN=28; // 画面端からの余白px
+function _updateEnemyMarkers(){
+    // プールを再利用（余分な要素は非表示）
+    let mi=0;
+    const W=window.innerWidth, H=window.innerHeight;
+    const _v3=new THREE.Vector3();
+    apaches.forEach(ap=>{
+        // スクリーン座標に投影
+        _v3.setFromMatrixPosition(ap.mesh.matrixWorld);
+        _v3.project(camera);
+        const sx=( _v3.x*0.5+0.5)*W;
+        const sy=(-_v3.y*0.5+0.5)*H;
+        const inView=_v3.z<1&&sx>0&&sx<W&&sy>0&&sy<H;
+        if(inView){mi++;return;} // 画面内は表示しない（モデルが見えている）
+
+        // マーカー要素を取得or生成
+        if(mi>=_markerPool.length){
+            const el=document.createElement('div');
+            el.className='enemy-marker';
+            el.innerHTML='<div class="arrow"></div><div class="label"></div>';
+            _enemyMarkersEl.appendChild(el);
+            _markerPool.push(el);
+        }
+        const m=_markerPool[mi]; mi++;
+        m.className='enemy-marker '+ap.type;
+
+        // 画面中心からの方向ベクトルで端に配置
+        const cx=W/2, cy=H/2;
+        const dx=sx-cx, dy=sy-cy;
+        const ax2=Math.abs(dx)/(W/2-_MARGIN), ay2=Math.abs(dy)/(H/2-_MARGIN);
+        let ex,ey,arrowChar;
+        if(ax2>ay2){
+            // 左右の壁
+            ex=dx>0?W-_MARGIN:_MARGIN;
+            ey=cy+dy*(W/2-_MARGIN)/Math.abs(dx);
+            ey=Math.max(_MARGIN,Math.min(H-_MARGIN,ey));
+            arrowChar=dx>0?'▶':'◀';
+        } else {
+            // 上下の壁
+            ex=cx+dx*(H/2-_MARGIN)/Math.abs(dy);
+            ex=Math.max(_MARGIN,Math.min(W-_MARGIN,ex));
+            ey=dy>0?H-_MARGIN:_MARGIN;
+            arrowChar=dy>0?'▼':'▲';
+        }
+        m.style.left=ex+'px'; m.style.top=ey+'px';
+        m.style.transform='translate(-50%,-50%)';
+        m.style.display='flex';
+        m.querySelector('.arrow').textContent=arrowChar;
+        m.querySelector('.label').textContent=ap.type==='helicopter'?'HELI':ap.type==='fighter'?'F-22':'GUN';
+    });
+    // 使わなかったプール要素を隠す
+    for(let i=mi;i<_markerPool.length;i++) _markerPool[i].style.display='none';
 }
 
 window.addEventListener('resize',()=>{
