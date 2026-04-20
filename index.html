@@ -2280,11 +2280,17 @@ function animate(){
     speedIndicator.style.opacity=boostFactor>0.5?Math.min((boostFactor-0.5)*4,1).toFixed(2):'0';
 
     prevUfoPos.copy(ufo.position);
-    if(keys['KeyW']||keys['ArrowUp'])ufo.position.z-=currentSpeed;
-    if(keys['KeyS']||keys['ArrowDown'])ufo.position.z+=currentSpeed;
-    if(keys['KeyA']||keys['ArrowLeft'])ufo.position.x-=currentSpeed;
-    if(keys['KeyD']||keys['ArrowRight'])ufo.position.x+=currentSpeed;
-    if(vStick.active){ufo.position.x+=vStick.x*currentSpeed;ufo.position.z+=vStick.y*currentSpeed;}
+    // カメラ相対移動: 「画面上方向=前進」を常に保証
+    const _camFwd=new THREE.Vector3();
+    camera.getWorldDirection(_camFwd);
+    _camFwd.y=0;
+    if(_camFwd.lengthSq()<0.001)_camFwd.set(0,0,-1);else _camFwd.normalize();
+    const _camRight=new THREE.Vector3(-_camFwd.z,0,_camFwd.x);
+    if(keys['KeyW']||keys['ArrowUp'])ufo.position.addScaledVector(_camFwd,currentSpeed);
+    if(keys['KeyS']||keys['ArrowDown'])ufo.position.addScaledVector(_camFwd,-currentSpeed);
+    if(keys['KeyA']||keys['ArrowLeft'])ufo.position.addScaledVector(_camRight,-currentSpeed);
+    if(keys['KeyD']||keys['ArrowRight'])ufo.position.addScaledVector(_camRight,currentSpeed);
+    if(vStick.active){ufo.position.addScaledVector(_camRight,vStick.x*currentSpeed);ufo.position.addScaledVector(_camFwd,-vStick.y*currentSpeed);}
     if(isMoving){const mv=new THREE.Vector3().subVectors(ufo.position,prevUfoPos);mv.y=0;if(mv.length()>0.01)ufoMoveDir.copy(mv).normalize();}
     prevUfoPos.copy(ufo.position);
 
