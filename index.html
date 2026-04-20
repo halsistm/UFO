@@ -1488,14 +1488,19 @@ function fireAttackBeam(){
     if(attackCooldown>0)return;
     attackCooldown=0.45; attackBeamTimer=0.3;
     soundManager.playOnce('attackBeam', 0.85);
-    // オートエイム: 広めのコーン(65°ハーフ角)内の最近傍敵を狙う
+    // 照準方向 = カメラ前方向（画面の上方向）
+    const _aimFwd=new THREE.Vector3();
+    camera.getWorldDirection(_aimFwd);
+    _aimFwd.y=0;
+    if(_aimFwd.lengthSq()<0.001)_aimFwd.set(0,0,-1);else _aimFwd.normalize();
+    // オートエイム: 画面前方コーン(65°ハーフ角)内の最近傍敵を狙う
     const CONE_COS=0.42;
     let nearest=null,nearestDist=Infinity;
     apaches.forEach(ap=>{
         const d=ufo.position.distanceTo(ap.mesh.position);
         if(d<300){
             const toEnemy=new THREE.Vector3().subVectors(ap.mesh.position,ufo.position).normalize();
-            if(ufoMoveDir.dot(toEnemy)>CONE_COS && d<nearestDist){nearestDist=d;nearest=ap;}
+            if(_aimFwd.dot(toEnemy)>CONE_COS && d<nearestDist){nearestDist=d;nearest=ap;}
         }
     });
     let targetPos;
@@ -1514,7 +1519,9 @@ function fireAttackBeam(){
             showNotif(`${label} +${pts}`);
         }else{nearest.flashTimer=0.2;}
     }else{
-        targetPos=new THREE.Vector3(ufo.position.x,0,ufo.position.z-60);
+        // フォールバック: カメラ前方60ユニット先（地面高さ）
+        targetPos=ufo.position.clone().addScaledVector(_aimFwd,60);
+        targetPos.y=0;
         const BEAM_DESTROY_RADIUS=22;
         let buildingHit=false;
         for(const[chunkKey,colliders]of buildingColliders){
@@ -2483,11 +2490,14 @@ function animate(){
     if(apaches.length>0){
         aimRingEl.style.opacity='1';
         const AIM_COS=0.42;
+        const _ringFwd=new THREE.Vector3();
+        camera.getWorldDirection(_ringFwd);_ringFwd.y=0;
+        if(_ringFwd.lengthSq()<0.001)_ringFwd.set(0,0,-1);else _ringFwd.normalize();
         const _aimLocked=apaches.some(ap=>{
             const d=ap.mesh.position.distanceTo(ufo.position);
             if(d>300) return false;
             const toE=new THREE.Vector3().subVectors(ap.mesh.position,ufo.position).normalize();
-            return ufoMoveDir.dot(toE)>AIM_COS;
+            return _ringFwd.dot(toE)>AIM_COS;
         });
         if(_aimLocked){aimRingEl.classList.add('locked');}else{aimRingEl.classList.remove('locked');}
     } else {
