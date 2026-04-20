@@ -2424,9 +2424,13 @@ function animate(){
         militaryBannerEl.classList.toggle('active',inMilitaryZone);
         if(inMilitaryZone){
             militarySpawnTimer=0;
-            // 侵入直後に3体同時スポーン
-            spawnHelicopter();spawnFighter();spawnTaikuho();
             _showEnemyWarning('⚠ MILITARY ZONE — FORCES SCRAMBLED ⚠');
+            // 戦闘中でなければ初期3体スポーン（フリーズ防止のため時間差）
+            if(apaches.length===0){
+                setTimeout(()=>spawnHelicopter(),0);
+                setTimeout(()=>spawnFighter(),150);
+                setTimeout(()=>spawnTaikuho(),300);
+            }
         }
     }
     if(inMilitaryZone){
