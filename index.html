@@ -2240,7 +2240,7 @@ for(let i=0;i<LED_TRAIL_POOL_SIZE;i++){
 const camTarget=new THREE.Vector3(0,40,55);
 const camLookTarget=new THREE.Vector3(0,30,0);
 const prevCamMoveDir=new THREE.Vector3(0,0,-1);
-let chunkUpdateTimer=0,camShakeTimer=0,moveStreak=0,currentSpeed=2.8,dogfightCamT=0,fovFlashTimer=0;
+let chunkUpdateTimer=0,camShakeTimer=0,moveStreak=0,currentSpeed=2.8,dogfightCamT=0,fovFlashTimer=0,taikuhoFocusT=0;
 let inMilitaryZone=false,militarySpawnTimer=0;
 const militaryOverlayEl=document.getElementById('military-overlay');
 const militaryBannerEl=document.getElementById('military-banner');
@@ -2712,18 +2712,30 @@ function animate(){
     const _fixedLookY = ufo.position.y - 25;
     const _fixedLookZ = ufo.position.z;
 
-    // ── A-2: ドッグファイト時カメラ — 緩やか追従チェイスカム
-    // lerp を遅くしてカメラが振り回されるのを抑制
+    // ── A-2: ドッグファイト時カメラ — ほぼ水平チェイスカム
     if(isMoving) dogCamDir.lerp(ufoMoveDir, 0.04).normalize();
 
-    // UFO後方22 + 上20にカメラを配置（高めにして俯瞰気味に）
-    const _dogCamX = ufo.position.x - dogCamDir.x*22 + camShake;
-    const _dogCamY = ufo.position.y + 20;
-    const _dogCamZ = ufo.position.z - dogCamDir.z*22;
-    // 前方5ユニット先だけ注視（先読みを最小限に）
-    const _dogLookX = ufo.position.x + dogCamDir.x*5;
-    const _dogLookY = ufo.position.y + 2;
-    const _dogLookZ = ufo.position.z + dogCamDir.z*5;
+    // 近くの対空砲を検出（水平距離120以内かつ2基以上でフォーカス）
+    const nearTaikuhos = apaches.filter(e => e.type==='taikuho' &&
+        Math.hypot(e.mesh.position.x-ufo.position.x, e.mesh.position.z-ufo.position.z) < 120);
+    taikuhoFocusT = THREE.MathUtils.lerp(taikuhoFocusT, nearTaikuhos.length>=2 ? 1 : 0, 0.05);
+
+    // UFO後方28 + 上4にカメラを配置（ほぼ水平）、対空砲フォーカス時は+12上げて見下ろす
+    const _dogCamX = ufo.position.x - dogCamDir.x*28 + camShake;
+    const _dogCamY = ufo.position.y + 4 + taikuhoFocusT*12;
+    const _dogCamZ = ufo.position.z - dogCamDir.z*28;
+    // 通常は前方50先を水平注視、対空砲フォーカス時は対空砲の平均位置へ
+    let _dogLookX = ufo.position.x + dogCamDir.x*50;
+    let _dogLookY = ufo.position.y - 2;
+    let _dogLookZ = ufo.position.z + dogCamDir.z*50;
+    if(taikuhoFocusT > 0.01 && nearTaikuhos.length > 0){
+        const tx = nearTaikuhos.reduce((s,e)=>s+e.mesh.position.x,0)/nearTaikuhos.length;
+        const ty = nearTaikuhos.reduce((s,e)=>s+e.mesh.position.y,0)/nearTaikuhos.length;
+        const tz = nearTaikuhos.reduce((s,e)=>s+e.mesh.position.z,0)/nearTaikuhos.length;
+        _dogLookX = THREE.MathUtils.lerp(_dogLookX, tx, taikuhoFocusT);
+        _dogLookY = THREE.MathUtils.lerp(_dogLookY, ty, taikuhoFocusT);
+        _dogLookZ = THREE.MathUtils.lerp(_dogLookZ, tz, taikuhoFocusT);
+    }
 
     // ── 通常 ⇔ チェイスカム ブレンド
     camTarget.set(
