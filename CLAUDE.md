@@ -76,3 +76,11 @@ ANIMATE              requestAnimationFrame ループ（UFO 操作・物理・UI 
 - **ターゲット追加** → `TARGET_DEFS` 配列にオブジェクトを追記し、`buildTargetMesh()` に case を追加
 - **バイオーム調整** → `getBiome()` 関数内の閾値
 - **敵のHP・ダメージ** → `spawnHelicopter()` / `spawnFighter()` / `spawnTaikuho()` の `hp` フィールドと `animate()` 内の `damage` 変数
+
+# 作業ルール
+
+## 変更範囲について
+- 明示的に指示された箇所**のみ**変更すること
+- 指示されていないコードのリファクタリング・整形・改善は禁止
+- 「ついでに直した」系の変更は一切しないこと
+- 変更前に「どこを変えるか」を必ず先に説明してから実行すること

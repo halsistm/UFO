@@ -43,17 +43,30 @@
         border: 1px solid rgba(0,255,136,0.27);
     }
     #hp-bar-container {
-        position: absolute; top: 20px; right: 20px;
-        color: var(--color-hp); font-size: 11px; letter-spacing: 2px;
-        text-align: center;
+        position: absolute; top: 18px; right: 20px;
+        color: var(--color-hp); font-size: 12px; letter-spacing: 2px;
+        text-align: center; text-shadow: 0 0 8px rgba(255,68,68,0.6);
     }
+    #hp-val { font-weight: bold; }
     #hp-bar-bg {
-        width: 140px; height: 8px; background: #1a0000;
-        border: 1px solid var(--color-hp); border-radius: 4px; margin-top: 3px;
+        width: 190px; height: 13px; background: #1a0000;
+        border: 1px solid var(--color-hp); border-radius: 7px; margin-top: 4px;
+        box-shadow: 0 0 10px rgba(255,68,68,0.25), inset 0 0 6px rgba(0,0,0,0.6);
+        overflow: hidden;
     }
     #hp-fill {
-        height: 100%; background: linear-gradient(90deg,#ff2200,#ff6600);
-        border-radius: 4px; transition: width 0.3s;
+        height: 100%; background: linear-gradient(90deg,#ff2200,#ff8800);
+        border-radius: 7px; transition: width 0.25s;
+        box-shadow: 0 0 10px rgba(255,100,0,0.5);
+    }
+    #hp-bar-container.low { color: #ff3322; }
+    #hp-bar-container.low #hp-fill {
+        background: linear-gradient(90deg,#ff0000,#ff3300);
+        animation: hpLowPulse 0.6s infinite alternate;
+    }
+    @keyframes hpLowPulse {
+        from { box-shadow: 0 0 8px rgba(255,0,0,0.5); }
+        to   { box-shadow: 0 0 20px rgba(255,0,0,0.9); }
     }
     #apache-warning {
         position: absolute; top: 50%; left: 50%;
@@ -109,12 +122,14 @@
         display: flex; flex-direction: column; align-items: center; gap: 1px;
     }
     .enemy-marker .arrow {
-        font-size: 18px; line-height: 1;
-        filter: drop-shadow(0 0 4px currentColor);
+        font-size: 24px; line-height: 1;
+        filter: drop-shadow(0 0 6px currentColor);
     }
     .enemy-marker .label {
-        font-size: 9px; font-weight: bold; letter-spacing: 1px;
+        font-size: 10px; font-weight: bold; letter-spacing: 1px;
         text-shadow: 0 0 6px currentColor;
+        background: rgba(0,0,0,0.45); padding: 1px 5px; border-radius: 6px;
+        margin-top: 1px;
     }
     .enemy-marker.helicopter { color: #ff9900; }
     .enemy-marker.fighter    { color: #ff3333; }
@@ -325,7 +340,7 @@
     </div>
     <div id="biome-label">GRASSLAND</div>
     <div id="hp-bar-container">
-        UFO HP
+        UFO HP <span id="hp-val">100</span>%
         <div id="hp-bar-bg"><div id="hp-fill" style="width:100%"></div></div>
     </div>
     <div id="speed-indicator">⚡ WARP SPEED</div>
@@ -2093,6 +2108,15 @@ function showNotif(text){
 const biomeLabel=document.getElementById('biome-label');
 let lastBiomeLabel='';
 const hpFill=document.getElementById('hp-fill');
+const hpValEl=document.getElementById('hp-val');
+const hpContainerEl=document.getElementById('hp-bar-container');
+// HP表示を一括更新（バー幅・数値・低HP警告クラス）
+function setUfoHP(v){
+    ufoHP=Math.max(0,v);
+    hpFill.style.width=ufoHP+'%';
+    hpValEl.textContent=Math.round(ufoHP);
+    hpContainerEl.classList.toggle('low',ufoHP<=30);
+}
 const speedIndicator=document.getElementById('speed-indicator');
 // ループ内で毎フレーム呼ばないようにキャッシュ
 const scoreEl=document.getElementById('score');
@@ -2246,7 +2270,6 @@ const militaryOverlayEl=document.getElementById('military-overlay');
 const militaryBannerEl=document.getElementById('military-banner');
 let spaceUsed=false; // keys['_spaceUsed'] から分離
 const prevUfoPos=new THREE.Vector3(),ufoMoveDir=new THREE.Vector3(0,0,-1);
-const dogCamDir=new THREE.Vector3(0,0,-1); // フライトシム視点用: 進行方向を滑らかに追従
 const _streakQuat=new THREE.Quaternion(),_zAxis=new THREE.Vector3(0,0,1);
 
 function animate(){
@@ -2287,14 +2310,20 @@ function animate(){
     speedIndicator.style.opacity=boostFactor>0.5?Math.min((boostFactor-0.5)*4,1).toFixed(2):'0';
 
     prevUfoPos.copy(ufo.position);
-    // 固定方向移動: 戦闘時にカメラが回転しても操作方向は変わらない
+    // 固定方向移動: 戦闘時にカメラが回転しても操作方向は変わらない（画面上=北=前進で一貫）
     const _camFwd=new THREE.Vector3(0,0,-1);
     const _camRight=new THREE.Vector3(1,0,0);
-    if(keys['KeyW']||keys['ArrowUp'])ufo.position.addScaledVector(_camFwd,currentSpeed);
-    if(keys['KeyS']||keys['ArrowDown'])ufo.position.addScaledVector(_camFwd,-currentSpeed);
-    if(keys['KeyA']||keys['ArrowLeft'])ufo.position.addScaledVector(_camRight,-currentSpeed);
-    if(keys['KeyD']||keys['ArrowRight'])ufo.position.addScaledVector(_camRight,currentSpeed);
-    if(vStick.active){ufo.position.addScaledVector(_camRight,vStick.x*currentSpeed);ufo.position.addScaledVector(_camFwd,-vStick.y*currentSpeed);}
+    // 入力を1本のベクトルに合成 → 斜め移動が速くなる問題を防ぐため正規化（スティックのアナログ量は維持）
+    const _move=new THREE.Vector3();
+    let _fwd=0,_right=0;
+    if(keys['KeyW']||keys['ArrowUp'])_fwd+=1;
+    if(keys['KeyS']||keys['ArrowDown'])_fwd-=1;
+    if(keys['KeyD']||keys['ArrowRight'])_right+=1;
+    if(keys['KeyA']||keys['ArrowLeft'])_right-=1;
+    if(_fwd||_right){const _l=Math.hypot(_fwd,_right);_move.addScaledVector(_camFwd,_fwd/_l);_move.addScaledVector(_camRight,_right/_l);}
+    if(vStick.active){_move.addScaledVector(_camRight,vStick.x);_move.addScaledVector(_camFwd,-vStick.y);}
+    if(_move.length()>1)_move.normalize();
+    ufo.position.addScaledVector(_move,currentSpeed);
     if(isMoving){const mv=new THREE.Vector3().subVectors(ufo.position,prevUfoPos);mv.y=0;if(mv.length()>0.01)ufoMoveDir.copy(mv).normalize();}
     prevUfoPos.copy(ufo.position);
 
@@ -2465,8 +2494,7 @@ function animate(){
         const bDist=b.mesh.position.distanceTo(ufo.position);
         if(bDist<12){
             soundManager.playOnce('ufoHit',0.9);
-            ufoHP=Math.max(0,ufoHP-b.damage);
-            hpFill.style.width=ufoHP+'%';
+            setUfoHP(ufoHP-b.damage);
             if(ufoHP<=0){triggerGameOver();}
             const origColor=bodyMat.emissive.getHex();
             bodyMat.emissive.setHex(0xff0000);
@@ -2498,7 +2526,8 @@ function animate(){
         });
         if(_aimLocked){aimRingEl.classList.add('locked');}else{aimRingEl.classList.remove('locked');}
     } else {
-        aimRingEl.style.opacity='0';
+        // 戦闘外でも薄く十字を表示（攻撃の着弾方向＝画面中央が常に分かるように）
+        aimRingEl.style.opacity='0.22';
         aimRingEl.classList.remove('locked');
     }
 
@@ -2674,7 +2703,7 @@ function animate(){
                 if(dx<hw&&dz<hd&&uy<c.h+UFO_RADIUS){
                     buildingCollisionCooldown=1.2;
                     soundManager.playOnce('crash', 1.0);
-                    ufoHP=Math.max(0,ufoHP-8);hpFill.style.width=ufoHP+'%';
+                    setUfoHP(ufoHP-8);
                     if(ufoHP<=0){triggerGameOver();}
                     const origEmissive=bodyMat.emissive.getHex();
                     bodyMat.emissive.setHex(0xff0000);setTimeout(()=>bodyMat.emissive.setHex(origEmissive),200);
@@ -2709,22 +2738,20 @@ function animate(){
     const _fixedLookY = ufo.position.y - 25;
     const _fixedLookZ = ufo.position.z;
 
-    // ── A-2: ドッグファイト時カメラ — ほぼ水平チェイスカム
-    if(isMoving) dogCamDir.lerp(ufoMoveDir, 0.04).normalize();
-
+    // ── A-2: ドッグファイト時カメラ — 北固定のまま引き＋ローアングル（回転させず操作方向と一致）
     // 近くの対空砲を検出（水平距離120以内かつ2基以上でフォーカス）
     const nearTaikuhos = apaches.filter(e => e.type==='taikuho' &&
         Math.hypot(e.mesh.position.x-ufo.position.x, e.mesh.position.z-ufo.position.z) < 120);
     taikuhoFocusT = THREE.MathUtils.lerp(taikuhoFocusT, nearTaikuhos.length>=2 ? 1 : 0, 0.05);
 
-    // UFO後方28 + 上4にカメラを配置（ほぼ水平）、対空砲フォーカス時は+12上げて見下ろす
-    const _dogCamX = ufo.position.x - dogCamDir.x*28 + camShake;
-    const _dogCamY = ufo.position.y + 4 + taikuhoFocusT*12;
-    const _dogCamZ = ufo.position.z - dogCamDir.z*28;
-    // 通常は前方50先を水平注視、対空砲フォーカス時は対空砲の平均位置へ
-    let _dogLookX = ufo.position.x + dogCamDir.x*50;
-    let _dogLookY = ufo.position.y - 2;
-    let _dogLookZ = ufo.position.z + dogCamDir.z*50;
+    // 通常カメラと同じ北向き。戦闘時はやや引いて低く構え、前方(北)を広く見せる
+    const _dogCamX = ufo.position.x + camShake;
+    const _dogCamY = ufo.position.y + 26 + taikuhoFocusT*10;
+    const _dogCamZ = ufo.position.z + 66;
+    // 前方(北)やや先の地平を注視。対空砲フォーカス時は対空砲の平均位置へ
+    let _dogLookX = ufo.position.x;
+    let _dogLookY = ufo.position.y - 14;
+    let _dogLookZ = ufo.position.z - 18;
     if(taikuhoFocusT > 0.01 && nearTaikuhos.length > 0){
         const tx = nearTaikuhos.reduce((s,e)=>s+e.mesh.position.x,0)/nearTaikuhos.length;
         const ty = nearTaikuhos.reduce((s,e)=>s+e.mesh.position.y,0)/nearTaikuhos.length;
@@ -2752,7 +2779,7 @@ function animate(){
     camera.lookAt(camLookTarget);
 
     // FOV: 通常55、ドッグファイト中は72で速度感を演出（フラッシュ不要）
-    const fovTarget = THREE.MathUtils.lerp(55, 72, dogfightCamT);
+    const fovTarget = THREE.MathUtils.lerp(55, 62, dogfightCamT);
     camera.fov = THREE.MathUtils.lerp(camera.fov, fovTarget, 0.06);
     camera.updateProjectionMatrix();
 
